@@ -92,21 +92,24 @@ function SOSPage() {
         patient_name = profile?.full_name || null;
         patient_phone = profile?.phone || null;
       }
-      const { data, error } = await supabase.from("alerts").insert({
-        patient_id, patient_name, patient_phone,
-        latitude: c.latitude, longitude: c.longitude, accuracy: c.accuracy,
-        heading: c.heading ?? null, speed: c.speed ?? null,
-        location_source: "gps", location_updated_at: new Date().toISOString(),
-        message: message.trim() || null,
-      } as never).select("id, status").single();
-      if (error) throw error;
+      const { data, error } = await supabase.rpc("submit_sos_alert", {
+        _patient_name: patient_name,
+        _patient_phone: patient_phone,
+        _latitude: c.latitude,
+        _longitude: c.longitude,
+        _accuracy: c.accuracy,
+        _heading: c.heading ?? null,
+        _speed: c.speed ?? null,
+        _message: message.trim() || null,
+      }).single();
+      if (error) throw new Error(error.message);
       setAlertId(data.id);
       setPatientId(patient_id);
       setStatus(data.status);
       setStage("sent");
       setSentAt(Date.now());
       buzz([120, 60, 120, 60, 320]);
-      toast.success("Alert sent. Help is on the way.");
+      toast.success("Alert sent. Waiting for a responder to acknowledge it.");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to send alert";
       toast.error(msg);

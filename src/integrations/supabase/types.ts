@@ -1135,6 +1135,19 @@ export type Database = {
           id: string
         }[]
       }
+      submit_sos_alert: {
+        Args: {
+          _latitude: number
+          _longitude: number
+          _accuracy?: number | null
+          _heading?: number | null
+          _speed?: number | null
+          _patient_name?: string | null
+          _patient_phone?: string | null
+          _message?: string | null
+        }
+        Returns: { id: string; status: string }[]
+      }
       upsert_live_location: {
         Args: {
           _accuracy?: number
