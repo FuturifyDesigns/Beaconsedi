@@ -1,22 +1,21 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useRouteContext } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 
 export function useRoles() {
-  const [roles, setRoles] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) { setLoading(false); return; }
-      const { data } = await supabase.from("user_roles")
-        .select("role").eq("user_id", userData.user.id);
-      if (cancelled) return;
-      setRoles((data ?? []).map((r) => r.role));
-      setLoading(false);
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  const { user } = useRouteContext({ from: "/_authenticated" });
+  const query = useQuery({
+    queryKey: ["roles", user.id],
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", user.id);
+      if (error) throw error;
+      return (data ?? []).map(row => row.role);
+    },
+  });
+  const roles: string[] = query.data ?? [];
+  const loading = query.isPending;
   return {
     roles,
     loading,

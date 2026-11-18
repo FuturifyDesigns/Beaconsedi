@@ -1092,6 +1092,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      update_sos_location: {
+        Args: { _alert_id: string; _latitude: number; _longitude: number; _accuracy?: number | null; _heading?: number | null; _speed?: number | null; _address?: string | null }
+        Returns: undefined
+      }
+      dispatch_incident: {
+        Args: { _alert_id: string; _unit_id: string; _eta?: number | null; _note?: string | null }
+        Returns: undefined
+      }
       admin_assign_responder_vehicle: {
         Args: { _email: string; _unit_id?: string; _user_id: string }
         Returns: Json

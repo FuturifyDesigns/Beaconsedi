@@ -94,6 +94,7 @@ export type MapMarker = {
   color?: string;
   /** Single character rendered inside the marker. */
   glyph?: string;
+  image?: "patient" | "ambulance";
   scale?: number;
   /** Draw a translucent accuracy radius (metres) around the marker. */
   accuracyMeters?: number;
@@ -173,6 +174,8 @@ type Props = {
 type LatLngLiteral = { lat: number; lng: number };
 type GMapsGlobal = {
   maps: {
+    Size: new (width: number, height: number) => unknown;
+    Point: new (x: number, y: number) => unknown;
     Map: new (el: Element, opts: Record<string, unknown>) => GMap;
     Marker: new (opts: Record<string, unknown>) => GMarker;
     Circle: new (opts: Record<string, unknown>) => GOverlay;
@@ -197,6 +200,7 @@ type GMarker = {
   setPosition: (l: LatLngLiteral) => void;
   setIcon: (i: unknown) => void;
   setTitle: (t: string) => void;
+  setOpacity: (opacity: number) => void;
 };
 type GOverlay = { setMap: (m: GMap | null) => void };
 
@@ -326,7 +330,11 @@ export function GoogleMap({
             animation: m.emphasis || m.pulse ? g.maps.Animation.BOUNCE : undefined,
             zIndex: m.emphasis ? 999 : 1,
             label: m.glyph ? { text: m.glyph, color: "#ffffff", fontSize: "10px", fontWeight: "700" } : undefined,
-            icon: {
+            icon: m.image ? {
+              url: import.meta.env.BASE_URL + "map-icons/" + m.image + ".png",
+              scaledSize: new g.maps.Size(m.image === "patient" ? 40 : 64, m.image === "patient" ? 60 : 43),
+              anchor: new g.maps.Point(m.image === "patient" ? 20 : 32, m.image === "patient" ? 60 : 22),
+            } : {
               path: g.maps.SymbolPath.CIRCLE,
               scale: m.scale ?? (m.emphasis ? 13 : 9),
               fillColor: color,
@@ -447,16 +455,11 @@ export function GoogleMap({
     const g = (window as unknown as { google?: GMapsGlobal }).google;
     if (!g) return;
 
-    const icon = (v: LiveVehicle, heading: number) => ({
-      path: g.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-      scale: 6.5,
-      rotation: heading,
-      fillColor: v.stale ? "#94a3b8" : (v.color ?? "#22d3ee"),
-      fillOpacity: v.stale ? 0.6 : 1,
-      strokeColor: "#0b1220",
-      strokeWeight: 2,
+    const icon = (_v: LiveVehicle, _heading: number) => ({
+      url: import.meta.env.BASE_URL + "map-icons/ambulance.png",
+      scaledSize: new g.maps.Size(64, 43),
+      anchor: new g.maps.Point(32, 22),
     });
-
     const seen = new Set<string>();
     vehicles.forEach((v) => {
       seen.add(v.id);
@@ -469,6 +472,7 @@ export function GoogleMap({
           map,
           title: v.label,
           zIndex: 900,
+          opacity: v.stale ? 0.5 : 1,
           icon: icon(v, heading),
           label: v.label ? { text: v.label, color: "#e2e8f0", fontSize: "10px", fontWeight: "700", className: "gm-vehicle-label" } : undefined,
         });
@@ -478,6 +482,7 @@ export function GoogleMap({
       }
 
       existing.marker.setIcon(icon(v, heading));
+      existing.marker.setOpacity(v.stale ? 0.5 : 1);
       if (v.label) existing.marker.setTitle(v.label);
 
       const fromLat = existing.lat;

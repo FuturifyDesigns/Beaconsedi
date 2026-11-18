@@ -42,7 +42,7 @@ export function MapFallback({ lat, lng, accuracyMeters, updatedAt, address, inci
     : null;
 
   return (
-    <div role="alert" className="flex h-full w-full flex-col justify-center gap-3 rounded-xl border border-emergency/40 bg-card p-4">
+    <div role="alert" className="flex h-full min-h-[360px] w-full flex-col justify-center gap-3 overflow-auto rounded-xl border border-emergency/40 bg-card p-4">
       <div className="flex items-center gap-2 text-emergency">
         <MapPinOff className="h-5 w-5" aria-hidden="true" />
         <p className="text-sm font-bold uppercase tracking-wide">Map service unavailable</p>

@@ -137,6 +137,7 @@ function ResponderCommandPage() {
   const markers: MapMarker[] = useMemo(() => {
     const list: MapMarker[] = active.map((i) => ({
       id: `inc-${i.id}`,
+      image: "patient",
       lat: i.latitude,
       lng: i.longitude,
       title: `${i.incident_code ?? "SOS"} — ${i.patient_name ?? "Anonymous"}`,
@@ -145,10 +146,6 @@ function ResponderCommandPage() {
       scale: i.id === selected?.id ? 14 : 10,
       onClick: () => setSelectedId(i.id),
     }));
-    for (const u of units) {
-      if (u.latitude == null || u.longitude == null || u.status === "offline") continue;
-      list.push({ id: `unit-${u.id}`, lat: u.latitude, lng: u.longitude, title: `${u.call_sign} — ${u.name}`, color: "#38bdf8", glyph: "U", scale: 9 });
-    }
     for (const h of hospitals) {
       list.push({ id: `hosp-${h.id}`, lat: h.latitude, lng: h.longitude, title: h.name, color: "#e2e8f0", glyph: "+", scale: 9 });
     }
@@ -320,6 +317,16 @@ function ResponderCommandPage() {
       <div className="h-[320px] w-full lg:h-[420px]">
         <GoogleMap
           markers={markers}
+          vehicles={units
+            .filter(unit => unit.latitude != null && unit.longitude != null && unit.status !== "offline")
+            .map(unit => ({
+              id: unit.id,
+              lat: unit.latitude!,
+              lng: unit.longitude!,
+              heading: unit.heading,
+              label: unit.call_sign,
+              stale: ["stale", "lost"].includes(gpsState(unit.last_location_update)),
+            }))}
           center={ownPos ?? (selected ? { lat: selected.latitude, lng: selected.longitude } : undefined)}
           zoom={13}
           dark

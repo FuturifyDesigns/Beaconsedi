@@ -252,9 +252,14 @@ export function usePatientResponseView(alertId: string | null): PatientResponseV
       return;
     }
     let cancelled = false;
+    let loading = false;
+    setView(null);
 
     const load = async () => {
+      if (loading || cancelled) return;
+      loading = true;
       const { data, error } = await supabase.rpc("incident_response_view", { _alert_id: alertId });
+      loading = false;
       if (cancelled) return;
       if (error) {
         console.error("[beacon:tracking] patient view failed", error);
@@ -277,17 +282,21 @@ export function usePatientResponseView(alertId: string | null): PatientResponseV
                 heading: row.heading,
                 speed: row.speed,
                 accuracy: row.accuracy,
-                at: row.last_location_update ?? new Date().toISOString(),
+                at: row.last_location_update ?? new Date(0).toISOString(),
               }
             : null,
       });
     };
 
     void load();
-    const id = window.setInterval(load, 5000);
+    const id = window.setInterval(load, 2000);
+    const channel = supabase.channel("patient-response-" + alertId)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "alerts", filter: "id=eq." + alertId }, () => void load())
+      .subscribe();
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      void supabase.removeChannel(channel);
     };
   }, [alertId]);
 

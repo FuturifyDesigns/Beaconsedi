@@ -78,13 +78,14 @@ export function OpsMap({
   const destination = selected ? { lat: selected.latitude, lng: selected.longitude } : null;
   const { route, loading: routeLoading } = useLiveRoute(origin, destination, 10_000);
 
-  const fix = gpsState(livePoint?.at ?? assigned?.updated_at ?? null);
+  const fix = gpsState(livePoint?.at ?? assigned?.last_location_update ?? null);
   const kmToScene = unitPos && destination ? distanceKm(unitPos, destination) : null;
 
 
   const markers: MapMarker[] = useMemo(() => {
     const incidentMarkers: MapMarker[] = incidents.map((i) => ({
       id: `inc-${i.id}`,
+      image: "patient",
       lat: i.latitude,
       lng: i.longitude,
       title: `${i.incident_code ?? "Incident"} — ${i.patient_name ?? "Anonymous"}`,
@@ -171,10 +172,11 @@ export function OpsMap({
       aria-label="Live operations map"
       className={
         expanded
-          ? "fixed inset-0 z-50 overflow-hidden border border-border bg-card"
-          : "relative h-full min-h-[320px] overflow-hidden rounded-xl border border-border bg-card"
+          ? "fixed inset-0 z-50 flex flex-col overflow-auto border border-border bg-card"
+          : "relative flex h-full min-h-[320px] flex-col overflow-hidden rounded-xl border border-border bg-card"
       }
     >
+      <div className="order-2 min-h-[360px] flex-1">
       <GoogleMap
         markers={markers}
         vehicles={vehicles}
@@ -204,10 +206,9 @@ export function OpsMap({
             : undefined
         }
       />
+      </div>
 
-
-
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-2 p-3">
+      <div className="order-1 flex flex-wrap items-start justify-between gap-3 border-b border-border p-3">
         <div className="pointer-events-auto rounded-lg border border-border bg-card/90 px-3 py-2 backdrop-blur">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Live operations map</p>
           <p className="text-xs text-foreground">
@@ -276,11 +277,11 @@ export function OpsMap({
 
       </div>
 
-      <div className="pointer-events-auto absolute bottom-3 right-3 w-72 max-w-[calc(100%-1.5rem)]">
+      <div className="order-3 px-3 pt-3">
         <RoutePanel route={route} loading={routeLoading} title={assigned ? `${assigned.call_sign} → scene` : "Active route"} />
       </div>
 
-      <ul className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap gap-x-3 gap-y-1 rounded-lg border border-border bg-card/90 px-3 py-2 text-[10px] text-muted-foreground backdrop-blur">
+      <ul className="order-4 flex flex-wrap gap-x-3 gap-y-2 border-t border-border px-3 py-3 text-[10px] text-muted-foreground">
 
         {LEGEND.map((l) => (
           <li key={l.label} className="flex items-center gap-1.5">

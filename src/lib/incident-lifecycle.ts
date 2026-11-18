@@ -131,9 +131,11 @@ export async function applyIncidentAction(incident: Incident, action: LifecycleA
       eta = match.eta;
     }
     if (!unitId) throw new Error("No available unit to dispatch");
-    alertPatch['assigned_unit_id'] = unitId;
-    alertPatch['eta_minutes'] = eta;
-    note = note ?? (eta != null ? `ETA ${eta} min` : null);
+    const { error } = await supabase.rpc("dispatch_incident", {
+      _alert_id: incident.id, _unit_id: unitId, _eta: eta, _note: note,
+    });
+    if (error) throw new Error(error.message);
+    return;
   }
 
   if (action === "resolve") {
@@ -146,9 +148,7 @@ export async function applyIncidentAction(incident: Incident, action: LifecycleA
 
   // Keep the assigned unit's status aligned with the incident stage.
   const unitPatch: Record<string, unknown> | null =
-    action === "dispatch"
-      ? { status: "en_route", current_alert_id: incident.id, eta_minutes: eta }
-      : action === "arrive"
+    action === "arrive"
         ? { status: "on_scene", current_alert_id: incident.id, eta_minutes: null }
         : action === "transport"
           ? { status: "transporting", current_alert_id: incident.id }

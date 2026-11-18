@@ -135,19 +135,12 @@ function OperationsPage() {
   async function dispatchUnit(incident: Incident, kind?: string) {
     const match = nearestUnit(incident, units, kind);
     if (!match) throw new Error(`No available ${kind ?? "unit"} nearby`);
-    const { data: u } = await supabase.auth.getUser();
-    const { error: e1 } = await supabase
-      .from("responder_units")
-      .update({ status: "en_route", current_alert_id: incident.id, eta_minutes: match.eta })
-      .eq("id", match.unit.id);
-    if (e1) throw e1;
-    const { error: e2 } = await supabase
-      .from("alerts")
-      .update({ status: "dispatched", assigned_unit_id: match.unit.id, eta_minutes: match.eta, responder_id: u.user?.id ?? null })
-      .eq("id", incident.id);
-    if (e2) throw e2;
-    await logEvent(incident.id, "unit_dispatched", `${match.unit.call_sign} · ${match.km.toFixed(1)} km · ETA ${match.eta} min`);
-    await logAudit("dispatch_unit", "alert", incident.id, { unit: match.unit.call_sign, eta: match.eta });
+    const { error } = await supabase.rpc("dispatch_incident", {
+      _alert_id: incident.id,
+      _unit_id: match.unit.id,
+      _eta: match.eta,
+    });
+    if (error) throw new Error(error.message);
   }
 
 
@@ -280,7 +273,7 @@ function OperationsPage() {
               (i) => i.location_updated_at && Date.now() - new Date(i.location_updated_at).getTime() < 120_000,
             ),
             navigation: active.some((i) => i.assigned_unit_id && i.status !== "resolved"),
-            communications: true,
+            communications: link === "connected" && !error,
           }}
         />
 

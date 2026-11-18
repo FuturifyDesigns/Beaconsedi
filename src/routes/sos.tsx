@@ -52,12 +52,11 @@ function SOSPage() {
       async (c) => {
         setCoords(c);
         if (alertId) {
-          await supabase.from("alerts").update({
-            latitude: c.latitude, longitude: c.longitude, accuracy: c.accuracy,
-            heading: c.heading ?? null, speed: c.speed ?? null,
-            location_source: "gps", location_sharing: true,
-            location_updated_at: new Date().toISOString(),
-          } as never).eq("id", alertId);
+          const { error } = await supabase.rpc("update_sos_location", {
+            _alert_id: alertId, _latitude: c.latitude, _longitude: c.longitude,
+            _accuracy: c.accuracy, _heading: c.heading ?? null, _speed: c.speed ?? null,
+          });
+          if (error) toast.error("Live location update failed. Check your connection.");
         }
       },
       (e) => console.error(e),
@@ -167,6 +166,9 @@ function SOSPage() {
 
   /* ------------------------- live responder tracking ------------------------ */
   const response = usePatientResponseView(stage === "sent" ? alertId : null);
+  useEffect(() => {
+    if (response?.incidentStatus) setStatus(response.incidentStatus);
+  }, [response?.incidentStatus]);
   const unitPoint = response?.point ?? null;
   const unitGps = useGpsState(unitPoint?.at);
   const distanceToScene = unitPoint && point ? distanceKm({ lat: unitPoint.lat, lng: unitPoint.lng }, point) : null;
@@ -202,8 +204,9 @@ function SOSPage() {
   // Persist the reverse-geocoded address on the alert so responders see it.
   useEffect(() => {
     if (!alertId || !geo?.address) return;
-    void supabase.from("alerts").update({ address: geo.address }).eq("id", alertId);
-  }, [alertId, geo?.address]);
+    if (!coords) return;
+    void supabase.rpc("update_sos_location", { _alert_id: alertId, _latitude: coords.latitude, _longitude: coords.longitude, _accuracy: coords.accuracy, _address: geo.address });
+  }, [alertId, geo?.address, coords?.latitude, coords?.longitude]);
 
   const facilityColor: Record<string, string> = {
     hospital: "#e2e8f0",
@@ -223,6 +226,7 @@ function SOSPage() {
     ? [
         {
           id: "me",
+          image: "patient",
           lat: coords.latitude,
           lng: coords.longitude,
           title: "You",
