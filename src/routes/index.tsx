@@ -24,7 +24,7 @@ function Landing() {
     <div className="min-h-screen bg-background pb-28 text-foreground md:pb-0">
       {/* Nav */}
       <header className="border-b border-border">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2 font-semibold tracking-tight">
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-emergency text-emergency-foreground">
               <StarOfLife className="h-5 w-5" />
@@ -127,10 +127,10 @@ function Landing() {
             <div className="relative overflow-hidden rounded-3xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs uppercase tracking-wider text-muted-foreground">Active alert</p>
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground">Example alert</p>
                   <p className="mt-1 text-lg font-semibold">Cardiac emergency</p>
                 </div>
-                <span className="rounded-full bg-emergency/10 px-3 py-1 text-xs font-semibold text-emergency">LIVE</span>
+                <span className="rounded-full bg-emergency/10 px-3 py-1 text-xs font-semibold text-emergency">DEMO</span>
               </div>
               <div className="relative mt-4 aspect-square w-full overflow-hidden rounded-xl border border-border">
                 <img
