@@ -52,7 +52,10 @@ export function useLiveRoute(origin: Point, destination: Point, intervalMs = 20_
           setError(null);
         }
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Routing failed");
+        if (!cancelled) {
+          setRoute(null);
+          setError(e instanceof Error ? e.message : "Routing failed");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

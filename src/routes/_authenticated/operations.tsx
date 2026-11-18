@@ -298,7 +298,7 @@ function OperationsPage() {
 
         <div className="grid gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_400px]">
           <div className="space-y-3">
-            <div className="h-[46vh] min-h-[320px]">
+            <div className="min-w-0">
               <OpsMap
                 incidents={active}
                 units={units}

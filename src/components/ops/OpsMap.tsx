@@ -173,10 +173,10 @@ export function OpsMap({
       className={
         expanded
           ? "fixed inset-0 z-50 flex flex-col overflow-auto border border-border bg-card"
-          : "relative flex h-full min-h-[320px] flex-col overflow-hidden rounded-xl border border-border bg-card"
+          : "relative flex min-h-[320px] flex-col overflow-hidden rounded-xl border border-border bg-card"
       }
     >
-      <div className="order-2 min-h-[360px] flex-1">
+      <div className={expanded ? "order-2 min-h-[360px] flex-1" : "order-2 h-[46vh] min-h-[360px] shrink-0"}>
       <GoogleMap
         markers={markers}
         vehicles={vehicles}
