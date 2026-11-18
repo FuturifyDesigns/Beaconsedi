@@ -7,11 +7,15 @@ import { securityHeaders } from "./lib/security-headers";
 const DEV = process.env["NODE_ENV"] !== "production";
 
 /** Attach Beacon's security headers to every HTML document response. */
-function withSecurityHeaders(response: Response): Response {
+function withSecurityHeaders(request: Request, response: Response): Response {
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("text/html")) return response;
   const headers = new Headers(response.headers);
-  for (const [key, value] of Object.entries(securityHeaders(DEV))) headers.set(key, value);
+  const host = new URL(request.url).hostname;
+  const lovablePreview = /\.(lovable\.app|lovableproject\.com|lovableproject-dev\.com)$/.test(host);
+  for (const [key, value] of Object.entries(securityHeaders(DEV, lovablePreview))) {
+    headers.set(key, value);
+  }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
@@ -61,10 +65,10 @@ export default {
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return withSecurityHeaders(await normalizeCatastrophicSsrResponse(response));
+      return withSecurityHeaders(request, await normalizeCatastrophicSsrResponse(response));
     } catch (error) {
       console.error(error);
-      return withSecurityHeaders(new Response(renderErrorPage(), {
+      return withSecurityHeaders(request, new Response(renderErrorPage(), {
         status: 500,
         headers: { "content-type": "text/html; charset=utf-8" },
       }));

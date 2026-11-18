@@ -13,7 +13,7 @@
  *  - CORP is `same-site`: Beacon's own documents/assets may be embedded by Lovable
  *    preview/publish hosts but not by arbitrary third parties.
  *  - CSP is a strict allowlist. Every domain below is required; see comments.
- *  - `frame-ancestors` allows the Lovable editor preview to iframe the app; nothing else.
+ *  - `frame-ancestors` allows the Lovable editor only when serving a Lovable preview.
  */
 
 /** Third-party origins, each with the reason it is required. */
@@ -46,7 +46,7 @@ const CSP_SOURCES = {
   frameAncestors: ["https://*.lovable.app", "https://*.lovableproject.com", "https://lovable.dev"],
 } as const;
 
-export function contentSecurityPolicy(dev: boolean): string {
+export function contentSecurityPolicy(dev: boolean, lovablePreview = false): string {
   const scriptExtra = dev ? ["'unsafe-eval'"] : [];
   const connectExtra = dev ? ["ws:", "http://localhost:*"] : [];
 
@@ -64,7 +64,7 @@ export function contentSecurityPolicy(dev: boolean): string {
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'"],
-    "frame-ancestors": ["'self'", ...CSP_SOURCES.frameAncestors],
+    "frame-ancestors": ["'self'", ...(lovablePreview ? CSP_SOURCES.frameAncestors : [])],
   };
   if (!dev) directives["upgrade-insecure-requests"] = [];
 
@@ -73,7 +73,7 @@ export function contentSecurityPolicy(dev: boolean): string {
     .join("; ");
 }
 
-export function securityHeaders(dev: boolean): Record<string, string> {
+export function securityHeaders(dev: boolean, lovablePreview = false): Record<string, string> {
   return {
     // Keeps the Google OAuth popup usable while isolating the browsing context.
     "Cross-Origin-Opener-Policy": "same-origin-allow-popups",
@@ -84,7 +84,7 @@ export function securityHeaders(dev: boolean): Record<string, string> {
     "Referrer-Policy": "origin-when-cross-origin",
     // Geolocation is the core SOS capability and must stay allowed for this origin.
     "Permissions-Policy": "geolocation=(self), camera=(), microphone=(self), payment=(), usb=()",
-    "Content-Security-Policy": contentSecurityPolicy(dev),
+    "Content-Security-Policy": contentSecurityPolicy(dev, lovablePreview),
     ...(dev ? {} : { "Strict-Transport-Security": "max-age=63072000; includeSubDomains" }),
   };
 }

@@ -265,12 +265,12 @@ function SOSPage() {
 
       <main className="mx-auto max-w-3xl px-4 py-8">
         <div className="sticky top-0 z-30 -mx-4 mb-6 bg-background/95 px-4 pb-2 pt-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <Button asChild size="lg" className="min-h-16 w-full bg-emergency text-lg font-bold uppercase tracking-wide text-emergency-foreground shadow-[var(--shadow-emergency)] hover:bg-emergency/90 focus-visible:ring-4 focus-visible:ring-emergency/40"
+          <Button asChild size="lg" className="h-auto min-h-16 w-full whitespace-normal bg-emergency px-3 py-2 text-center text-base font-bold uppercase tracking-wide text-emergency-foreground shadow-[var(--shadow-emergency)] hover:bg-emergency/90 focus-visible:ring-4 focus-visible:ring-emergency/40 sm:px-8 sm:text-lg"
             onClick={() => buzz([40, 60, 40])}>
 
             <a href="tel:997" aria-label="One tap to call Botswana emergency services on 997">
               <PhoneCall className="h-6 w-6" aria-hidden="true" />
-              One tap to call 997 — Botswana emergency
+              <span>One tap to call 997 — Botswana emergency</span>
             </a>
           </Button>
           <p className="mt-1 text-center text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -323,12 +323,12 @@ function SOSPage() {
                 <input
                   value={name} onChange={(e) => setName(e.target.value)}
                   placeholder="Your name"
-                  className="rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
+                  className="min-w-0 rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
                 />
                 <input
                   value={phone} onChange={(e) => setPhone(e.target.value)}
                   placeholder="Callback phone"
-                  className="rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
+                  className="min-w-0 rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
                 />
               </div>
             </div>
