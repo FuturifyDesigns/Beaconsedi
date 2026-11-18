@@ -1,0 +1,12 @@
+- [x] Replace the home cover with a polished first-responder action scene
+- [x] Remove original unassigned demo fleet records
+- [x] Restrict operations to real SOS incidents and role-linked responder units
+- [x] Harden Google Maps loading, retries, and offline recovery
+- [x] Verify the home page and authenticated operations flow
+- [x] Rename the product to BEACON SEDI EMERGENCY APP and adopt the Star of Life icon
+- [x] Restrict operations and management controls to administrators
+- [x] Add a large, clearly labelled SOS button and 997 fallback to the home page for signed-out users
+- [x] Integrate Blue Light Maps deep-link navigation (blm://nav, responsetruck profile) as primary mobile Navigate option with Google fallback
+- [x] Ambulance Referral Command Centre: hospital/operator roles, 11-stage lifecycle, vehicle assignment, live long-distance GPS tracking, alerts, CSV export (verified end-to-end in preview: create → accept → assign → depart → en route)
+- [ ] Full Blue Light Maps replacement of embedded maps/tracking — blocked: no public web SDK/API and no Botswana coverage; needs enterprise agreement with bluelightmaps.com
+- [ ] Replace Google Maps throughout the app with TomTom while preserving GPS tracking and emergency workflows — blocked: TomTom key submission declined; Botswana routing is documented but real-time traffic is not listed, and satellite/navigation handoff need verification; existing maps remain unchanged

@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790188549184,
+      "tag": "0000_care_links_live_locations",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790252242734,
+      "tag": "0001_secure_admin_vehicle_assignments",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791261994221,
+      "tag": "0002_add_crew_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793779238973,
+      "tag": "0003_add_referral_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793779251717,
+      "tag": "0004_ambulance_referrals",
+      "breakpoints": true
+    }
+  ]
+}
