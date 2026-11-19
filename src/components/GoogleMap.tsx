@@ -172,6 +172,7 @@ type Props = {
 /* ------------------------------ google typings ----------------------------- */
 
 type LatLngLiteral = { lat: number; lng: number };
+type GBounds = { extend: (point: LatLngLiteral) => void; isEmpty: () => boolean };
 type GMapsGlobal = {
   maps: {
     Size: new (width: number, height: number) => unknown;
@@ -181,7 +182,7 @@ type GMapsGlobal = {
     Circle: new (opts: Record<string, unknown>) => GOverlay;
     Polyline: new (opts: Record<string, unknown>) => GOverlay;
     TrafficLayer: new () => { setMap: (m: GMap | null) => void };
-    LatLngBounds: new () => { extend: (l: LatLngLiteral) => void };
+    LatLngBounds: new () => GBounds;
     SymbolPath: { CIRCLE: unknown; FORWARD_CLOSED_ARROW: unknown };
     Animation: { DROP: unknown; BOUNCE: unknown };
     geometry?: { encoding?: { decodePath: (s: string) => { lat: () => number; lng: () => number }[] } };
@@ -247,7 +248,7 @@ export function GoogleMap({
   const overlayRefs = useRef<GOverlay[]>([]);
   const clusterRef = useRef<{ clearMarkers: () => void; addMarkers: (markers: never) => void } | null>(null);
   const trafficRef = useRef<{ setMap: (m: GMap | null) => void } | null>(null);
-  const boundsRef = useRef<unknown>(null);
+  const boundsRef = useRef<GBounds | null>(null);
   const vehicleRefs = useRef<Map<string, { marker: GMarker; lat: number; lng: number; heading: number; raf: number | null }>>(new Map());
   const didFit = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -545,7 +546,9 @@ export function GoogleMap({
 
   // Fit everything currently drawn (fit-route button).
   useEffect(() => {
-    if (fitNonce == null || !mapRef.current || !ready || !boundsRef.current) return;
+    if (!fitNonce || !mapRef.current || !ready || !boundsRef.current) return;
+    vehicles.forEach(vehicle => boundsRef.current!.extend({ lat: vehicle.lat, lng: vehicle.lng }));
+    if (boundsRef.current.isEmpty()) return;
     mapRef.current.fitBounds(boundsRef.current);
   }, [fitNonce, ready]);
 
