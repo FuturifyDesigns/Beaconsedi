@@ -47,7 +47,7 @@ function SOSPage() {
   const [noAckTimeout, setNoAckTimeout] = useState(false);
 
   useEffect(() => {
-    if (stage !== "sent") return;
+    if (stage !== "sent" || status === "resolved" || status === "cancelled") return;
     const stop = watchSmoothed(
       async (c) => {
         setCoords(c);
@@ -62,7 +62,7 @@ function SOSPage() {
       (e) => console.error(e),
     );
     return stop;
-  }, [stage, alertId]);
+  }, [stage, alertId, status]);
 
   useEffect(() => {
     if (!alertId) return;
@@ -203,10 +203,10 @@ function SOSPage() {
 
   // Persist the reverse-geocoded address on the alert so responders see it.
   useEffect(() => {
-    if (!alertId || !geo?.address) return;
+    if (!alertId || !geo?.address || status === "resolved" || status === "cancelled") return;
     if (!coords) return;
     void supabase.rpc("update_sos_location", { _alert_id: alertId, _latitude: coords.latitude, _longitude: coords.longitude, _accuracy: coords.accuracy, _address: geo.address });
-  }, [alertId, geo?.address, coords?.latitude, coords?.longitude]);
+  }, [alertId, geo?.address, coords?.latitude, coords?.longitude, status]);
 
   const facilityColor: Record<string, string> = {
     hospital: "#e2e8f0",

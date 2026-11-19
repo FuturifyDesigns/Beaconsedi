@@ -253,10 +253,11 @@ export function usePatientResponseView(alertId: string | null): PatientResponseV
     }
     let cancelled = false;
     let loading = false;
+    let finished = false;
     setView(null);
 
     const load = async () => {
-      if (loading || cancelled) return;
+      if (loading || cancelled || finished) return;
       loading = true;
       const { data, error } = await supabase.rpc("incident_response_view", { _alert_id: alertId });
       loading = false;
@@ -267,6 +268,7 @@ export function usePatientResponseView(alertId: string | null): PatientResponseV
       }
       const row = (data ?? [])[0];
       if (!row) return;
+      finished = row.incident_status === "resolved" || row.incident_status === "cancelled";
       setView({
         incidentStatus: row.incident_status,
         unitId: row.unit_id,
