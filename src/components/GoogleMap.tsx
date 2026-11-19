@@ -30,9 +30,9 @@ export function resetGoogleMapsLoader() {
 
 export function loadGoogleMaps(): Promise<void> {
   if (typeof window === "undefined") return Promise.reject(new Error("SSR"));
+  if (loadPromise) return loadPromise;
   const w = window as unknown as { google?: { maps?: { Map?: unknown } } };
   if (typeof w.google?.maps?.Map === "function") return Promise.resolve();
-  if (loadPromise) return loadPromise;
   if (!BROWSER_KEY) return Promise.reject(new Error("Google Maps key not configured"));
 
   loadPromise = new Promise((resolve, reject) => {
@@ -422,9 +422,10 @@ export function GoogleMap({
           path.forEach((p) => bounds.extend(p));
         });
 
+        vehicles.forEach(vehicle => bounds.extend({ lat: vehicle.lat, lng: vehicle.lng }));
         boundsRef.current = bounds;
 
-        if (fitToMarkers && markers.length > 1 && !didFit.current) {
+        if (fitToMarkers && markers.length + vehicles.length > 1 && (!didFit.current || vehicles.length > 0)) {
           map.fitBounds(bounds);
           didFit.current = true;
         } else if (markers.length === 1 && !didFit.current) {
@@ -440,13 +441,13 @@ export function GoogleMap({
     return () => {
       cancelled = true;
     };
-  }, [markers, center?.lat, center?.lng, zoom, fitToMarkers, traffic, dark, mapTypeId, cluster, routesKey, fencesKey, retryKey]);
+  }, [markers, center?.lat, center?.lng, zoom, fitToMarkers, traffic, dark, mapTypeId, cluster, routesKey, fencesKey, vehiclesKey, retryKey]);
 
   // Recenter when the caller moves the focus point.
   useEffect(() => {
-    if (!center || !mapRef.current || !ready || followVehicleId) return;
+    if (!center || !mapRef.current || !ready || followVehicleId || (fitToMarkers && vehicles.length > 0)) return;
     mapRef.current.setCenter(center);
-  }, [center?.lat, center?.lng, ready, followVehicleId]);
+  }, [center?.lat, center?.lng, ready, followVehicleId, fitToMarkers, vehicles.length]);
 
   /* --------------------------- live vehicle layer -------------------------- */
   // Vehicles live outside the marker rebuild so they can be tweened between
