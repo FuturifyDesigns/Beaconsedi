@@ -282,7 +282,7 @@ function SOSPage() {
             </a>
           </Button>
           <p className="mt-1 text-center text-[11px] uppercase tracking-wider text-muted-foreground">
-            Ambulance · Police · Fire — Botswana's primary emergency line
+            Ambulance — Botswana's primary emergency line
           </p>
         </div>
         {stage !== "sent" ? (

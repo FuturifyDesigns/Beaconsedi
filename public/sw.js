@@ -2,7 +2,7 @@
 // Network-first for everything; only when the network fails is the offline page served.
 const SCOPE = self.registration.scope;
 const CACHE_PREFIX = `beacon-offline:${SCOPE}:`;
-const CACHE = `${CACHE_PREFIX}v2`;
+const CACHE = `${CACHE_PREFIX}v3`;
 const OFFLINE_URL = new URL("offline.html", SCOPE).href;
 const ASSETS = [OFFLINE_URL, new URL("icon-192.png", SCOPE).href];
 
