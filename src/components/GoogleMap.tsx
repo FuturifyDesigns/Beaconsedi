@@ -22,15 +22,16 @@ function clearPendingLoader(removeScript: boolean) {
 
 /** Drop the cached loader so a failed load can be retried. */
 export function resetGoogleMapsLoader() {
-  const loaded = typeof window !== "undefined" && !!(window as unknown as { google?: { maps?: unknown } }).google?.maps;
+  const loaded = typeof window !== "undefined" &&
+    typeof (window as unknown as { google?: { maps?: { Map?: unknown } } }).google?.maps?.Map === "function";
   clearPendingLoader(!loaded);
   loadPromise = null;
 }
 
 export function loadGoogleMaps(): Promise<void> {
   if (typeof window === "undefined") return Promise.reject(new Error("SSR"));
-  const w = window as unknown as { google?: { maps?: unknown } };
-  if (w.google?.maps) return Promise.resolve();
+  const w = window as unknown as { google?: { maps?: { Map?: unknown } } };
+  if (typeof w.google?.maps?.Map === "function") return Promise.resolve();
   if (loadPromise) return loadPromise;
   if (!BROWSER_KEY) return Promise.reject(new Error("Google Maps key not configured"));
 
