@@ -1,6 +1,6 @@
 import { PHONE_PATTERN, phoneValue, textValue } from "@/lib/validation";
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -26,9 +26,27 @@ function AuthPage() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [confirmationEmail, setConfirmationEmail] = useState("");
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+  const submitting = useRef(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const url = import.meta.env.VITE_SUPABASE_URL;
+    const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    if (url && key) {
+      void fetch(`${url}/auth/v1/settings`, { headers: { apikey: key }, signal: controller.signal })
+        .then((response) => response.ok ? response.json() : null)
+        .then((settings) => { if (!controller.signal.aborted) setGoogleEnabled(settings?.external?.google === true); })
+        .catch(() => {});
+    }
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("mode") === "signup") setMode("signup");
@@ -42,30 +60,36 @@ function AuthPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
+    setFormError("");
+    setConfirmationEmail("");
     setLoading(true);
     try {
       if (mode === "signup") {
         textValue(fullName, "Full name", 200, true);
         phoneValue(phone);
+        if (password !== confirmPassword) throw new Error("Passwords do not match");
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(), password,
           options: {
-            emailRedirectTo: window.location.origin + "/dashboard",
+            emailRedirectTo: window.location.origin + "/auth/callback",
             data: { full_name: fullName.trim(), phone: phone.trim() },
           },
         });
         if (error) throw error;
-        if (!data.session) { toast.success("Check your email to confirm your account before signing in."); return; }
+        if (!data.session) { setConfirmationEmail(email.trim()); return; }
         toast.success("Account created. You're signed in.");
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
         if (error) throw error;
       }
       navigate({ to: "/dashboard" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Auth failed";
-      toast.error(msg);
+      setFormError(msg);
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
   }
@@ -112,40 +136,46 @@ function AuthPage() {
           </div>
 
           <div className="rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-[var(--shadow-card)]">
-            <button
-              type="button" onClick={handleGoogle}
+            {googleEnabled && <><button
+              type="button" onClick={handleGoogle} disabled={loading}
               className="w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-medium hover:bg-accent"
             >
               Continue with Google
             </button>
             <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground">
               <span className="h-px flex-1 bg-border" /> or email <span className="h-px flex-1 bg-border" />
-            </div>
+            </div></>}
+            {confirmationEmail && <p role="status" className="mb-4 rounded-lg border border-border bg-muted p-3 text-sm">Check the inbox for {confirmationEmail} to confirm your account, then sign in. If you already registered, use Sign in below.</p>}
             <form onSubmit={handleSubmit} className="space-y-3">
               {mode === "signup" && (
                 <>
                   <input maxLength={200}
-                    type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)}
+                    type="text" required autoComplete="name" aria-label="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)}
                     placeholder="Full name"
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
                   />
                   <input maxLength={25} pattern={PHONE_PATTERN} title="Enter 7–15 digits, with an optional country code"
-                    type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
+                    type="tel" autoComplete="tel" aria-label="Phone (optional)" value={phone} onChange={(e) => setPhone(e.target.value)}
                     placeholder="Phone (for responder callback)"
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
                   />
                 </>
               )}
               <input maxLength={254}
-                type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                type="email" required autoComplete="email" aria-label="Email" value={email} onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email"
                 className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
               />
               <input maxLength={128}
-                type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)}
+                type="password" required minLength={6} autoComplete={mode === "signup" ? "new-password" : "current-password"} aria-label="Password" value={password} onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
                 className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
               />
+              {mode === "signup" && <>
+                <p className="text-xs text-muted-foreground">Use at least 6 characters for your password.</p>
+                <input type="password" required minLength={6} maxLength={128} autoComplete="new-password" aria-label="Confirm password" placeholder="Confirm password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2" />
+              </>}
+              {formError && <p role="alert" className="text-sm text-destructive">{formError}</p>}
               <button
                 type="submit" disabled={loading}
                 className="w-full rounded-lg bg-emergency px-4 py-2.5 text-sm font-semibold text-emergency-foreground hover:opacity-90 disabled:opacity-70"
@@ -156,7 +186,8 @@ function AuthPage() {
             <p className="mt-4 text-center text-xs text-muted-foreground">
               {mode === "signin" ? "New here?" : "Have an account?"}{" "}
               <button
-                onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+                disabled={loading}
+                onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setFormError(""); setConfirmationEmail(""); setPassword(""); setConfirmPassword(""); }}
                 className="font-medium text-foreground hover:underline"
               >
                 {mode === "signin" ? "Create an account" : "Sign in"}
