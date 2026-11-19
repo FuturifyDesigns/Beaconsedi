@@ -275,6 +275,7 @@ function TriageForm({ incident, onDone }: { incident: Incident; onDone: () => vo
     setBusy(true);
     try {
       const { data: u } = await supabase.auth.getUser();
+      if (!Number.isInteger(count) || count < 1 || count > 999) throw new Error("Patients involved must be between 1 and 999");
       const report: TriageReport = { ...form, patient_count: count, recorded_at: new Date().toISOString(), recorded_by: u.user?.email ?? null };
       const { error } = await supabase
         .from("alerts")

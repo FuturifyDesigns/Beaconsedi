@@ -55,7 +55,7 @@ function AdminPage() {
 
   const grant = useMutation({
     mutationFn: (v: { userId: string; role: Role }) => grantFn({ data: v }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-users"] }),
+    onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["admin-users"] }); await qc.invalidateQueries({ queryKey: ["roles"] }); },
   });
   const revoke = useMutation({
     mutationFn: (v: { userId: string; role: Role }) => revokeFn({ data: v }),
@@ -63,6 +63,7 @@ function AdminPage() {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["admin-users"] }),
         qc.invalidateQueries({ queryKey: ["admin-vehicle-assignments"] }),
+        qc.invalidateQueries({ queryKey: ["roles"] }),
       ]);
     },
   });
@@ -74,7 +75,7 @@ function AdminPage() {
   return (
     <AppShell isResponder={isResponder}>
       <div className="mx-auto max-w-4xl p-4 sm:p-6">
-        <header className="mb-6 flex items-center gap-3">
+        <header className="mb-4 flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-lg bg-emergency/10 text-emergency">
             <Shield className="h-5 w-5" />
           </span>
@@ -86,6 +87,7 @@ function AdminPage() {
           </div>
         </header>
 
+        {status.error && <p role="alert" className="text-sm text-destructive">Unable to check administrator access. Please reload.</p>}
         {status.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
 
         {status.data && !status.data.isAdmin && (
@@ -103,6 +105,7 @@ function AdminPage() {
               <AddVehicleCard />
             </div>
             <input
+              maxLength={254}
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter by email…"

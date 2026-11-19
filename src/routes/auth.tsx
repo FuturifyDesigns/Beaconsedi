@@ -1,3 +1,4 @@
+import { PHONE_PATTERN, phoneValue, textValue } from "@/lib/validation";
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
@@ -44,14 +45,17 @@ function AuthPage() {
     setLoading(true);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email, password,
+        textValue(fullName, "Full name", 200, true);
+        phoneValue(phone);
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(), password,
           options: {
             emailRedirectTo: window.location.origin + "/dashboard",
-            data: { full_name: fullName, phone },
+            data: { full_name: fullName.trim(), phone: phone.trim() },
           },
         });
         if (error) throw error;
+        if (!data.session) { toast.success("Check your email to confirm your account before signing in."); return; }
         toast.success("Account created. You're signed in.");
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -95,7 +99,7 @@ function AuthPage() {
           </Link>
         </div>
       </header>
-      <main className="mx-auto grid min-h-[calc(100vh-49px)] max-w-md place-items-center px-4 py-10">
+      <main className="mx-auto grid min-h-[calc(100vh-49px)] max-w-md place-items-center px-4 py-5 sm:py-10">
         <div className="w-full">
           <div className="mb-6 flex items-center gap-3">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-emergency text-emergency-foreground">
@@ -107,7 +111,7 @@ function AuthPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+          <div className="rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-[var(--shadow-card)]">
             <button
               type="button" onClick={handleGoogle}
               className="w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-medium hover:bg-accent"
@@ -120,24 +124,24 @@ function AuthPage() {
             <form onSubmit={handleSubmit} className="space-y-3">
               {mode === "signup" && (
                 <>
-                  <input
+                  <input maxLength={200}
                     type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)}
                     placeholder="Full name"
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
                   />
-                  <input
+                  <input maxLength={25} pattern={PHONE_PATTERN} title="Enter 7–15 digits, with an optional country code"
                     type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
                     placeholder="Phone (for responder callback)"
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
                   />
                 </>
               )}
-              <input
+              <input maxLength={254}
                 type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email"
                 className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
               />
-              <input
+              <input maxLength={128}
                 type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
                 className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none ring-ring focus:ring-2"

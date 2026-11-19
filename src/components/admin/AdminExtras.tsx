@@ -1,3 +1,4 @@
+import { PHONE_PATTERN } from "@/lib/validation";
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useServerFn } from "@tanstack/react-start";
@@ -86,14 +87,14 @@ export function AddVehicleCard() {
         className="mt-4 grid gap-3 sm:grid-cols-2"
         onSubmit={(e) => { e.preventDefault(); m.mutate(); }}
       >
-        <input required placeholder="Name (e.g. Gaborone Ambulance 4)" value={form.name} onChange={set("name")} className={input} />
-        <input required placeholder="Call sign (e.g. AMB-04)" value={form.callSign} onChange={set("callSign")} className={input} />
+        <input maxLength={80} required placeholder="Name (e.g. Gaborone Ambulance 4)" value={form.name} onChange={set("name")} className={input} />
+        <input maxLength={20} required placeholder="Call sign (e.g. AMB-04)" value={form.callSign} onChange={set("callSign")} className={input} />
         <select value={form.kind} onChange={set("kind")} className={input} aria-label="Vehicle type">
           {KINDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
-        <input placeholder="Model (e.g. Toyota Land Cruiser)" value={form.vehicle} onChange={set("vehicle")} className={input} />
-        <input placeholder="Registration number" value={form.registrationNumber} onChange={set("registrationNumber")} className={input} />
-        <input placeholder="Vehicle phone" value={form.phone} onChange={set("phone")} className={input} />
+        <input maxLength={80} placeholder="Model (e.g. Toyota Land Cruiser)" value={form.vehicle} onChange={set("vehicle")} className={input} />
+        <input maxLength={80} placeholder="Registration number" value={form.registrationNumber} onChange={set("registrationNumber")} className={input} />
+        <input type="tel" maxLength={25} pattern={PHONE_PATTERN} placeholder="Vehicle phone" value={form.phone} onChange={set("phone")} className={input} />
         <Button type="submit" disabled={m.isPending} className="bg-emergency text-emergency-foreground hover:bg-emergency/90 sm:col-span-2">
           {m.isPending ? "Adding…" : "Add vehicle"}
         </Button>

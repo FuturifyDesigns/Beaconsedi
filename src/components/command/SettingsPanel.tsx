@@ -33,6 +33,7 @@ export function SettingsPanel({ prefs, onPrefs }: { prefs: CommandPrefs; onPrefs
 
   async function verifyEnroll() {
     if (!enrolling) return;
+    if (!/^[0-9]{6}$/.test(code)) return toast.error("Enter the six-digit authentication code");
     const { data: challenge, error: cErr } = await supabase.auth.mfa.challenge({ factorId: enrolling.id });
     if (cErr) return toast.error(cErr.message);
     const { error } = await supabase.auth.mfa.verify({ factorId: enrolling.id, challengeId: challenge.id, code });
@@ -96,11 +97,13 @@ export function SettingsPanel({ prefs, onPrefs }: { prefs: CommandPrefs; onPrefs
             <img src={enrolling.qr} alt="MFA enrolment QR code" className="h-40 w-40 rounded-lg bg-white p-2" />
             <div className="flex gap-2">
               <label className="sr-only" htmlFor="mfa-code">Authentication code</label>
-              <input
+              <input maxLength={6}
+                pattern="[0-9]{6}"
+                autoComplete="one-time-code"
                 id="mfa-code"
                 inputMode="numeric"
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 placeholder="123456"
                 className="min-h-11 w-32 rounded-lg border border-border bg-background px-3 text-sm"
               />

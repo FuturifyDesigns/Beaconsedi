@@ -48,41 +48,55 @@ function CarePage() {
   const [email, setEmail] = useState("");
   const [relationship, setRelationship] = useState("");
   const [asPatient, setAsPatient] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const loading = useRef(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
+    if (loading.current) return;
+    loading.current = true;
+    try {
     const { data: u } = await supabase.auth.getUser();
     if (!u.user) return;
     setMe(u.user.id);
     const { data, error } = await supabase.from("care_links").select("*").order("created_at", { ascending: false });
-    if (error) { toast.error(error.message); return; }
+    if (error) throw error;
     const rows = (data ?? []) as Link[];
     setLinks(rows);
     const others = [...new Set(rows.map((l) => (l.patient_id === u.user!.id ? l.carer_id : l.patient_id)))];
     const patients = rows.filter((l) => l.carer_id === u.user!.id && l.status === "accepted").map((l) => l.patient_id);
+    if (!others.length) setNames({});
     if (others.length) {
-      const { data: p } = await supabase.from("profiles").select("id, full_name").in("id", others);
-      setNames(Object.fromEntries((p ?? []).map((r) => [r.id, r.full_name ?? ""])));
+      const { data: p, error: nameError } = await supabase.rpc("care_link_names" as never);
+      if (nameError) throw nameError;
+      setNames(Object.fromEntries(((p ?? []) as { id: string; full_name: string | null }[]).map((r) => [r.id, r.full_name ?? ""])));
     }
     if (patients.length) {
-      const [{ data: l }, { data: a }] = await Promise.all([
+      const [{ data: l, error: locError }, { data: a, error: alertError }] = await Promise.all([
         supabase.from("live_locations").select("*").in("user_id", patients),
         supabase.from("alerts").select("id, patient_id, status, created_at, latitude, longitude, incident_code")
           .in("patient_id", patients).in("status", OPEN).order("created_at", { ascending: false }),
       ]);
+      if (locError) throw locError;
+      if (alertError) throw alertError;
       setLocs(Object.fromEntries(((l ?? []) as Loc[]).map((r) => [r.user_id, r])));
       setAlerts((a ?? []) as Alert[]);
     } else { setLocs({}); setAlerts([]); }
+    setLoadError("");
+    } catch { setLoadError("Could not refresh your care circle. Displayed information may be out of date."); }
+    finally { loading.current = false; }
   }, []);
 
   useEffect(() => {
     void load();
+    const poll = window.setInterval(() => void load(), 10000);
     const ch = supabase.channel("care-circle")
       .on("postgres_changes", { event: "*", schema: "public", table: "care_links" }, () => void load())
       .on("postgres_changes", { event: "*", schema: "public", table: "live_locations" }, () => void load())
       .on("postgres_changes", { event: "*", schema: "public", table: "alerts" }, () => void load())
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => { clearInterval(poll); supabase.removeChannel(ch); };
   }, [load]);
 
   async function invite(e: React.FormEvent) {
@@ -96,12 +110,25 @@ function CarePage() {
   }
 
   async function respond(id: string, status: "accepted" | "declined") {
-    const { error } = await supabase.from("care_links").update({ status }).eq("id", id);
-    if (error) toast.error(error.message); else void load();
+    if (pendingId) return;
+    setPendingId(id);
+    try {
+      const { data, error } = await supabase.from("care_links").update({ status }).eq("id", id).select("id");
+      if (error) throw error;
+      if (!data?.length) throw new Error("This invitation has already changed. Refresh and try again.");
+      await load();
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not respond to invitation"); }
+    finally { setPendingId(null); }
   }
   async function remove(id: string) {
-    const { error } = await supabase.from("care_links").delete().eq("id", id);
-    if (error) toast.error(error.message); else void load();
+    if (pendingId) return;
+    setPendingId(id);
+    try {
+      const { error } = await supabase.from("care_links").delete().eq("id", id);
+      if (error) throw error;
+      await load();
+    } catch { toast.error("Could not remove link. Please try again."); }
+    finally { setPendingId(null); }
   }
 
   const lookingAfter = links.filter((l) => me && l.carer_id === me && l.status === "accepted");
@@ -109,7 +136,7 @@ function CarePage() {
     const m: MapMarker[] = [];
     for (const l of lookingAfter) {
       const loc = locs[l.patient_id];
-      if (loc) m.push({ id: `loc-${l.patient_id}`, lat: loc.latitude, lng: loc.longitude, title: names[l.patient_id] || "Linked person", color: "#2563eb", accuracyMeters: loc.accuracy ?? undefined });
+      if (loc?.sharing) m.push({ id: `loc-${l.patient_id}`, lat: loc.latitude, lng: loc.longitude, title: names[l.patient_id] || "Linked person", color: "#2563eb", accuracyMeters: loc.accuracy ?? undefined });
     }
     for (const a of alerts) m.push({ id: `sos-${a.id}`, lat: a.latitude, lng: a.longitude, title: `SOS ${a.incident_code ?? ""}`, pulse: true, emphasis: true, noCluster: true });
     return m;
@@ -119,7 +146,7 @@ function CarePage() {
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-5xl space-y-6 p-4 md:p-8">
+      <div className="mx-auto max-w-5xl space-y-4 p-4 md:p-8">
         <header className="flex items-center gap-3">
           <HeartHandshake className="h-6 w-6 text-emergency" />
           <div>
@@ -142,16 +169,17 @@ function CarePage() {
           </div>
         )}
 
+        {loadError && <p role="alert" className="text-sm text-destructive">{loadError}</p>}
         <ShareLocation />
 
         <section className="rounded-xl border border-border bg-card p-4">
           <h2 className="mb-3 font-semibold">Add someone</h2>
           <form onSubmit={invite} className="grid gap-3 md:grid-cols-[1fr_1fr_auto_auto] md:items-end">
             <label className="text-sm">Their BEACON SEDI email
-              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={input} />
+              <input type="email" required maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} className={input} />
             </label>
             <label className="text-sm">Relationship (optional)
-              <input value={relationship} onChange={(e) => setRelationship(e.target.value)} placeholder="e.g. daughter, nurse" className={input} />
+              <input maxLength={120} value={relationship} onChange={(e) => setRelationship(e.target.value)} placeholder="e.g. daughter, nurse" className={input} />
             </label>
             <select value={asPatient ? "carer" : "patient"} onChange={(e) => setAsPatient(e.target.value === "carer")} className={input}>
               <option value="carer">They look after me</option>
@@ -170,7 +198,7 @@ function CarePage() {
               {links.map((l) => {
                 const iAmPatient = l.patient_id === me;
                 const other = iAmPatient ? l.carer_id : l.patient_id;
-                const loc = !iAmPatient ? locs[other] : undefined;
+                const loc = !iAmPatient && locs[other]?.sharing ? locs[other] : undefined;
                 const incoming = l.status === "pending" && l.created_by !== me;
                 return (
                   <li key={l.id} className="flex flex-wrap items-center gap-3 py-3 text-sm">
@@ -183,11 +211,11 @@ function CarePage() {
                     </div>
                     {incoming && (
                       <>
-                        <button onClick={() => respond(l.id, "accepted")} className="inline-flex items-center gap-1 rounded-md bg-success px-3 py-1.5 text-success-foreground"><Check className="h-4 w-4" />Accept</button>
-                        <button onClick={() => respond(l.id, "declined")} className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5"><X className="h-4 w-4" />Decline</button>
+                        <button disabled={!!pendingId} onClick={() => respond(l.id, "accepted")} className="inline-flex items-center gap-1 rounded-md bg-success px-3 py-1.5 text-success-foreground"><Check className="h-4 w-4" />Accept</button>
+                        <button disabled={!!pendingId} onClick={() => respond(l.id, "declined")} className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5"><X className="h-4 w-4" />Decline</button>
                       </>
                     )}
-                    <button onClick={() => remove(l.id)} aria-label="Remove link" className="rounded-md p-2 text-muted-foreground hover:bg-accent"><Trash2 className="h-4 w-4" /></button>
+                    <button disabled={!!pendingId} onClick={() => remove(l.id)} aria-label="Remove link" className="rounded-md p-2 text-muted-foreground hover:bg-accent"><Trash2 className="h-4 w-4" /></button>
                   </li>
                 );
               })}
@@ -211,26 +239,29 @@ function ShareLocation() {
   const [on, setOn] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const lastSent = useRef(0);
+  const writes = useRef<Promise<unknown>>(Promise.resolve());
 
   useEffect(() => {
     if (!on) return;
     setStatus("Waiting for GPS…");
+    let active = true;
     const stop = watchSmoothed(
       (c) => {
         const now = Date.now();
         if (now - lastSent.current < 10_000) return;
         lastSent.current = now;
-        supabase.rpc("upsert_live_location", {
+        writes.current = writes.current.catch(() => {}).then(() => supabase.rpc("upsert_live_location", {
           _lat: c.latitude, _lng: c.longitude, _accuracy: c.accuracy,
           _heading: c.heading ?? undefined, _speed: c.speed ?? undefined, _sharing: true,
-        }).then(({ error }) => setStatus(error ? `Upload failed: ${error.message}` : `Shared ±${Math.round(c.accuracy)} m at ${new Date().toLocaleTimeString()}`));
+        })).then(({ error }) => { if (active) setStatus(error ? `Upload failed: ${error.message}` : `Shared ±${Math.round(c.accuracy)} m at ${new Date().toLocaleTimeString()}`); });
       },
       (e) => setStatus(`Location unavailable: ${e.message}`),
     );
     return () => {
+      active = false;
       stop();
       lastSent.current = 0;
-      void supabase.rpc("upsert_live_location", { _lat: 0, _lng: 0, _sharing: false });
+      writes.current = writes.current.catch(() => {}).then(() => supabase.rpc("upsert_live_location", { _lat: 0, _lng: 0, _sharing: false })).then(({ error }) => { if (error) toast.error("Could not stop location sharing. Check your connection and try again."); });
     };
   }, [on]);
 
@@ -239,6 +270,7 @@ function ShareLocation() {
       <Radio className={`h-5 w-5 ${on ? "text-success" : "text-muted-foreground"}`} />
       <div className="flex-1 text-sm">
         <p className="font-medium">Share my live location with my carers</p>
+        <p className="text-xs text-muted-foreground">Location expires after one minute without a fresh GPS update.</p>
         <p className="text-muted-foreground">{on ? status : "Off — carers only see where you are when you raise an SOS."}</p>
       </div>
       <button onClick={() => setOn((v) => !v)} className={`rounded-lg px-4 py-2 text-sm font-medium ${on ? "border border-border" : "bg-emergency text-emergency-foreground"}`}>

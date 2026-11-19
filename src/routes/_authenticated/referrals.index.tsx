@@ -282,7 +282,7 @@ function ReferralCommandCentre() {
           ))}
           <label className="relative ml-auto w-full sm:w-64">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
+            <input maxLength={400}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search reference, vehicle, facility…"
@@ -291,9 +291,9 @@ function ReferralCommandCentre() {
           </label>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
           {/* referral register */}
-          <div className="space-y-3">
+          <div className="min-w-0 space-y-3">
             {data.isLoading && <p className="text-sm text-muted-foreground">Loading referrals…</p>}
             {data.error && <p className="text-sm text-destructive">{(data.error as Error).message}</p>}
             {!data.isLoading && visible.length === 0 && (
@@ -307,7 +307,7 @@ function ReferralCommandCentre() {
           </div>
 
           {/* live map */}
-          <div className="lg:sticky lg:top-4 lg:self-start">
+          <div className="min-w-0 lg:sticky lg:top-4 lg:self-start">
             <div className="overflow-hidden rounded-xl border border-border">
               <GoogleMap
                 markers={mapMarkers}
@@ -363,7 +363,7 @@ function ReferralCard({
     <Link
       to="/referrals/$id"
       params={{ id: r.id }}
-      className="block rounded-xl border border-border bg-card p-4 transition hover:border-emergency/50"
+      className="block min-w-0 overflow-hidden rounded-xl border border-border bg-card p-4 transition hover:border-emergency/50"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-mono text-sm font-semibold tracking-wide">{r.reference}</p>
@@ -374,9 +374,9 @@ function ReferralCard({
       </div>
 
       <p className="mt-2 flex items-center gap-1.5 text-sm">
-        <span className="truncate font-medium">{from?.name ?? "—"}</span>
+        <span className="min-w-0 flex-1 truncate font-medium">{from?.name ?? "—"}</span>
         <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <span className="truncate font-medium">{to?.name ?? "—"}</span>
+        <span className="min-w-0 flex-1 truncate font-medium">{to?.name ?? "—"}</span>
       </p>
 
       {unit && (

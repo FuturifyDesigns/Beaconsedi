@@ -1,3 +1,4 @@
+import { BLOOD_TYPES, PROFILE_LIMITS, PHONE_PATTERN, validateProfile } from "@/lib/validation";
 import { SoundSettingsCard } from "@/components/SoundSettingsCard";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -34,6 +35,8 @@ function ProfilePage() {
   const { isResponder } = useIsResponder();
   const [profile, setProfile] = useState<Profile>(EMPTY);
   const [userId, setUserId] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -41,7 +44,8 @@ function ProfilePage() {
       const { data: u } = await supabase.auth.getUser();
       if (!u.user) return;
       setUserId(u.user.id);
-      const { data } = await supabase.from("profiles").select("*").eq("id", u.user.id).maybeSingle();
+      const { data, error } = await supabase.from("profiles").select("*").eq("id", u.user.id).maybeSingle();
+      if (error) { setLoadError("Could not load your profile. Reload before editing."); return; }
       if (data) setProfile({
         full_name: data.full_name ?? "", phone: data.phone ?? "",
         blood_type: data.blood_type ?? "", allergies: data.allergies ?? "",
@@ -49,19 +53,28 @@ function ProfilePage() {
         emergency_contact_name: data.emergency_contact_name ?? "",
         emergency_contact_phone: data.emergency_contact_phone ?? "",
       });
-    })();
+      setLoaded(true);
+    })().catch(() => setLoadError("Could not load your profile. Reload before editing."));
   }, []);
 
   async function save() {
-    if (!userId) return;
-    setSaving(true);
-    const { error } = await supabase.from("profiles").upsert({ id: userId, ...profile });
-    setSaving(false);
-    if (error) toast.error(error.message); else toast.success("Profile saved");
+    if (!userId || !loaded || saving) return;
+    try {
+      const valid = validateProfile(profile);
+      setSaving(true);
+      const { error } = await supabase.from("profiles").upsert({ id: userId, ...valid });
+      if (error) throw error;
+      setProfile(valid);
+      toast.success("Profile saved");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not save profile"); }
+    finally { setSaving(false); }
   }
 
   const field = (k: keyof Profile) => ({
     value: profile[k],
+    maxLength: PROFILE_LIMITS[k],
+    disabled: !loaded || saving,
+    ...(k.includes("phone") ? { pattern: PHONE_PATTERN, title: "Enter 7–15 digits, with an optional country code" } : {}),
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setProfile((p) => ({ ...p, [k]: e.target.value })),
     className: "w-full rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none ring-ring focus:ring-2",
@@ -69,7 +82,7 @@ function ProfilePage() {
 
   return (
     <AppShell isResponder={isResponder}>
-      <div className="mx-auto max-w-2xl px-6 py-8">
+      <div className="mx-auto max-w-2xl px-4 py-4 sm:px-6 sm:py-6">
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-xl bg-emergency/10 text-emergency">
             <HeartPulse className="h-5 w-5" />
@@ -80,11 +93,12 @@ function ProfilePage() {
           </div>
         </div>
 
-        <div className="mt-6 space-y-4 rounded-2xl border border-border bg-card p-6">
+        {loadError && <p role="alert" className="mt-3 text-sm text-destructive">{loadError}</p>}
+        <form onSubmit={(e) => { e.preventDefault(); void save(); }} className="mt-4 space-y-3 rounded-2xl border border-border bg-card p-4 sm:p-6">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Full name"><input {...field("full_name")} /></Field>
             <Field label="Phone"><input {...field("phone")} type="tel" /></Field>
-            <Field label="Blood type"><input {...field("blood_type")} placeholder="e.g. O−" /></Field>
+            <Field label="Blood type"><select value={profile.blood_type} disabled={!loaded || saving} onChange={(e) => setProfile((p) => ({ ...p, blood_type: e.target.value }))} className={field("blood_type").className}><option value="">Unknown / not recorded</option>{BLOOD_TYPES.map((t) => <option key={t}>{t}</option>)}</select></Field>
           </div>
           <Field label="Allergies"><textarea {...field("allergies")} rows={2} /></Field>
           <Field label="Medical conditions"><textarea {...field("medical_conditions")} rows={2} /></Field>
@@ -95,13 +109,13 @@ function ProfilePage() {
           </div>
 
           <button
-            onClick={save} disabled={saving}
+            type="submit" disabled={saving || !loaded}
             className="mt-2 w-full rounded-lg bg-emergency px-4 py-2.5 text-sm font-semibold text-emergency-foreground hover:opacity-90 disabled:opacity-70"
           >
             {saving ? "Saving..." : "Save profile"}
           </button>
-        </div>
-        <div className="mt-6"><SoundSettingsCard showAlertTone={isResponder} /></div>
+        </form>
+        <div className="mt-4"><SoundSettingsCard showAlertTone={isResponder} /></div>
       </div>
     </AppShell>
   );

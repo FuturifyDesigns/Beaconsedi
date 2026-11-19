@@ -168,7 +168,7 @@ function ResponderCommandPage() {
   async function saveProfile(draft: Partial<ResponderProfile>) {
     if (!user) return;
     setBusy(true);
-    const payload = { ...draft, user_id: user.id, email: draft.email ?? user.email } as never;
+    const payload = { ...draft, date_of_birth: draft.date_of_birth || null, license_expiry: draft.license_expiry || null, user_id: user.id, email: draft.email ?? user.email } as never;
     const { error } = await supabase.from("responder_profiles").upsert(payload, { onConflict: "user_id" });
     setBusy(false);
     if (error) return toast.error(error.message);

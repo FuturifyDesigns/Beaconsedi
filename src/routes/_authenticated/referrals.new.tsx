@@ -1,3 +1,4 @@
+import { PHONE_PATTERN } from "@/lib/validation";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -49,7 +50,7 @@ function NewReferralPage() {
   });
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-    setForm((f) => ({ ...f, [k]: e.target.value }));
+    setForm((f) => ({ ...f, [k]: e.target.value, ...(k === "fromFacilityId" && f.toFacilityId === e.target.value ? { toFacilityId: "" } : {}) }));
 
   const facilityList = (facilities.data?.facilities ?? []) as ReferralFacility[];
 
@@ -59,7 +60,7 @@ function NewReferralPage() {
         <Link to="/referrals" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" /> Command centre
         </Link>
-        <header className="mb-6 flex items-center gap-3">
+        <header className="mb-4 flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-lg bg-emergency/10 text-emergency">
             <ClipboardPlus className="h-5 w-5" />
           </span>
@@ -76,9 +77,11 @@ function NewReferralPage() {
             e.preventDefault();
             create.mutate();
           }}
-          className="space-y-4 rounded-xl border border-border bg-card p-5"
+          className="space-y-3 rounded-xl border border-border bg-card p-4 sm:p-5"
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          {facilities.error && <p role="alert" className="text-sm text-destructive">Could not load facilities. Please reload.</p>}
+          {!facilities.isLoading && !facilities.error && facilityList.length < 2 && <p role="status" className="text-sm text-muted-foreground">At least two registered facilities are needed. Ask an administrator to add the referring and receiving facilities.</p>}
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Referring facility" required>
               <select value={form.fromFacilityId} onChange={set("fromFacilityId")} required className={inputCls}>
                 <option value="">Choose facility…</option>
@@ -104,7 +107,7 @@ function NewReferralPage() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Patient reference number" required>
-              <input value={form.patientRef} onChange={set("patientRef")} required placeholder="e.g. PT-2026-1042" className={inputCls} />
+              <input maxLength={80} value={form.patientRef} onChange={set("patientRef")} required placeholder="e.g. PT-2026-1042" className={inputCls} />
             </Field>
             <Field label="Referral priority" required>
               <select value={form.priority} onChange={set("priority")} className={inputCls}>
@@ -117,11 +120,11 @@ function NewReferralPage() {
           </div>
 
           <Field label="Patient condition">
-            <input value={form.patientCondition} onChange={set("patientCondition")} placeholder="e.g. Head injury, stable, ventilated" className={inputCls} />
+            <input maxLength={400} value={form.patientCondition} onChange={set("patientCondition")} placeholder="e.g. Head injury, stable, ventilated" className={inputCls} />
           </Field>
 
           <Field label="Clinical referral notes">
-            <textarea value={form.clinicalNotes} onChange={set("clinicalNotes")} rows={3} placeholder="Handover notes for the receiving team…" className={inputCls} />
+            <textarea maxLength={400} value={form.clinicalNotes} onChange={set("clinicalNotes")} rows={3} placeholder="Handover notes for the receiving team…" className={inputCls} />
           </Field>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -133,28 +136,28 @@ function NewReferralPage() {
               </select>
             </Field>
             <Field label="Ambulance provider / EMS company">
-              <input value={form.provider} onChange={set("provider")} placeholder="e.g. Botswana EMS" className={inputCls} />
+              <input maxLength={400} value={form.provider} onChange={set("provider")} placeholder="e.g. Botswana EMS" className={inputCls} />
             </Field>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Referring doctor / practitioner">
-              <input value={form.referringDoctor} onChange={set("referringDoctor")} placeholder="Dr …" className={inputCls} />
+              <input maxLength={400} value={form.referringDoctor} onChange={set("referringDoctor")} placeholder="Dr …" className={inputCls} />
             </Field>
             <Field label="Contact person">
-              <input value={form.contactPerson} onChange={set("contactPerson")} placeholder="Name" className={inputCls} />
+              <input maxLength={400} value={form.contactPerson} onChange={set("contactPerson")} placeholder="Name" className={inputCls} />
             </Field>
           </div>
 
           <Field label="Contact phone">
-            <input value={form.contactPhone} onChange={set("contactPhone")} type="tel" placeholder="+267 …" className={inputCls} />
+            <input maxLength={25} pattern={PHONE_PATTERN} title="Enter 7–15 digits, with an optional country code" value={form.contactPhone} onChange={set("contactPhone")} type="tel" placeholder="+267 …" className={inputCls} />
           </Field>
 
           {create.error && <p className="text-sm text-destructive">{(create.error as Error).message}</p>}
 
           <button
             type="submit"
-            disabled={create.isPending}
+            disabled={create.isPending || facilities.isLoading || !!facilities.error || facilityList.length < 2}
             className="w-full rounded-lg bg-emergency px-4 py-3 text-sm font-semibold text-emergency-foreground hover:bg-emergency/90 disabled:opacity-50"
           >
             {create.isPending ? "Submitting…" : "Submit referral"}

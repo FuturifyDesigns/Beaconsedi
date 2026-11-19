@@ -137,6 +137,7 @@ export function useNotifications(userId: string | undefined) {
 export function usePatientProfile(patientId: string | null | undefined) {
   return useQuery({
     queryKey: ["responder", "patient", patientId],
+    refetchInterval: 15_000,
     enabled: !!patientId,
     queryFn: async () => {
       const { data, error } = await supabase.from("profiles").select("*").eq("id", patientId!).maybeSingle();

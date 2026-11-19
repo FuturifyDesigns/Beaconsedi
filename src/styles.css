@@ -137,3 +137,9 @@
 @utility pulse-emergency {
   animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea, select { font-size: 16px; max-width: 100%; }
+  input, textarea, select { min-width: 0; }
+  main { overflow-wrap: anywhere; }
+}

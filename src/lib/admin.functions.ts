@@ -1,3 +1,4 @@
+import { phoneValue, textValue, uuidValue } from "@/lib/validation";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
@@ -20,11 +21,13 @@ export const listUsersWithRoles = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     if (!(await isAdmin(context.supabase, context.userId))) throw new Error("Forbidden");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: usersData, error: usersErr } = await supabaseAdmin.auth.admin.listUsers({
-      page: 1,
-      perPage: 200,
-    });
-    if (usersErr) throw usersErr;
+    const allUsers: { id: string; email?: string; created_at: string }[] = [];
+    for (let page = 1; ; page++) {
+      const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 200 });
+      if (error) throw error;
+      allUsers.push(...data.users);
+      if (data.users.length < 200) break;
+    }
     const { data: roles, error: rolesErr } = await supabaseAdmin
       .from("user_roles")
       .select("user_id, role");
@@ -35,7 +38,7 @@ export const listUsersWithRoles = createServerFn({ method: "GET" })
       arr.push(r.role as Role);
       byUser.set(r.user_id, arr);
     });
-    return usersData.users.map((u) => ({
+    return allUsers.map((u) => ({
       id: u.id,
       email: u.email ?? "",
       created_at: u.created_at,
@@ -83,12 +86,12 @@ type VehicleInput = {
 export const createVehicle = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: VehicleInput) => {
-    const name = String(d.name ?? "").trim().slice(0, 80);
-    const callSign = String(d.callSign ?? "").trim().toUpperCase().slice(0, 20);
+    const name = textValue(d.name, "Vehicle name", 80, true);
+    const callSign = textValue(d.callSign, "Call sign", 20, true).toUpperCase();
     if (!name || !callSign) throw new Error("Name and call sign are required");
     if (!VEHICLE_KINDS.includes(d.kind)) throw new Error("Invalid vehicle type");
-    const opt = (v?: string) => (v ? String(v).trim().slice(0, 80) || null : null);
-    return { name, callSign, kind: d.kind, vehicle: opt(d.vehicle), registrationNumber: opt(d.registrationNumber), phone: opt(d.phone) };
+    const opt = (v?: string) => (textValue(v, "Vehicle detail", 80) || null);
+    return { name, callSign, kind: d.kind, vehicle: opt(d.vehicle), registrationNumber: opt(d.registrationNumber), phone: phoneValue(d.phone) || null };
   })
   .handler(async ({ data, context }) => {
     if (!(await isAdmin(context.supabase, context.userId))) throw new Error("Forbidden");
@@ -120,7 +123,7 @@ export const createVehicle = createServerFn({ method: "POST" })
 
 export const assignVehicleToResponder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: { userId: string; email: string; unitId: string | null }) => data)
+  .inputValidator((data: { userId: string; email: string; unitId: string | null }) => ({ userId: uuidValue(data.userId, "user"), email: textValue(data.email, "Email", 254), unitId: data.unitId ? uuidValue(data.unitId, "vehicle") : null }))
   .handler(async ({ data, context }) => {
     if (!(await isAdmin(context.supabase, context.userId))) throw new Error("Forbidden");
     const { error } = await context.supabase.rpc("admin_assign_responder_vehicle", {
@@ -139,38 +142,26 @@ export const assignVehicleToResponder = createServerFn({ method: "POST" })
 
 export const grantRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { userId: string; role: Role }) => d)
+  .inputValidator((d: { userId: string; role: Role }) => {
+    if (!["patient", "responder", "crew", "admin", "hospital", "operator"].includes(d.role)) throw new Error("Invalid role");
+    return { userId: uuidValue(d.userId, "user"), role: d.role };
+  })
   .handler(async ({ data, context }) => {
     if (!(await isAdmin(context.supabase, context.userId))) throw new Error("Forbidden");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin
-      .from("user_roles")
-      .insert({ user_id: data.userId, role: data.role });
-    if (error && !error.message.toLowerCase().includes("duplicate")) throw error;
+    const { error } = await context.supabase.rpc("admin_set_role" as never, { _user_id: data.userId, _role: data.role, _grant: true } as never);
+    if (error) throw error;
     return { ok: true };
   });
 
 export const revokeRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { userId: string; role: Role }) => d)
+  .inputValidator((d: { userId: string; role: Role }) => {
+    if (!["patient", "responder", "crew", "admin", "hospital", "operator"].includes(d.role)) throw new Error("Invalid role");
+    return { userId: uuidValue(d.userId, "user"), role: d.role };
+  })
   .handler(async ({ data, context }) => {
     if (!(await isAdmin(context.supabase, context.userId))) throw new Error("Forbidden");
-    if (data.userId === context.userId && data.role === "admin") {
-      throw new Error("You cannot revoke your own admin role");
-    }
-    if (data.role === "responder" || data.role === "crew") {
-      const { error: assignmentError } = await context.supabase.rpc("admin_assign_responder_vehicle", {
-        _user_id: data.userId,
-        _email: "",
-      });
-      if (assignmentError) throw assignmentError;
-    }
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin
-      .from("user_roles")
-      .delete()
-      .eq("user_id", data.userId)
-      .eq("role", data.role);
+    const { error } = await context.supabase.rpc("admin_set_role" as never, { _user_id: data.userId, _role: data.role, _grant: false } as never);
     if (error) throw error;
     return { ok: true };
   });

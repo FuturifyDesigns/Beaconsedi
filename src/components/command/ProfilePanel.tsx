@@ -1,3 +1,4 @@
+import { PHONE_PATTERN } from "@/lib/validation";
 import { useEffect, useState } from "react";
 import { CERT_LEVELS, licenseExpiryState, type ResponderProfile } from "@/lib/responder";
 import { AlertTriangle, Save } from "lucide-react";
@@ -10,7 +11,7 @@ const FIELDS: { key: keyof ResponderProfile; label: string; type?: string; group
   { key: "national_id", label: "National identity number", group: "Personal information" },
   { key: "employee_number", label: "Employee number", group: "Personal information" },
   { key: "responder_code", label: "Responder ID", group: "Personal information" },
-  { key: "photo_url", label: "Photograph URL", group: "Personal information" },
+  { key: "photo_url", label: "Photograph URL", type: "url", group: "Personal information" },
   { key: "gender", label: "Gender", group: "Personal information" },
   { key: "date_of_birth", label: "Date of birth", type: "date", group: "Personal information" },
   { key: "phone", label: "Phone number", type: "tel", group: "Personal information" },
@@ -62,9 +63,14 @@ export function ProfilePanel({ profile, saving, onSave }: Props) {
                 <input
                   id={`rp-${String(f.key)}`}
                   type={f.type ?? "text"}
+                  min={f.type === "number" ? 0 : undefined}
+                  max={f.type === "number" ? 80 : f.key === "date_of_birth" ? new Date().toISOString().slice(0, 10) : undefined}
+                  step={f.type === "number" ? 1 : undefined}
+                  maxLength={f.type === "tel" ? 25 : f.type === "url" ? 2048 : 400}
+                  pattern={f.type === "tel" ? PHONE_PATTERN : undefined}
                   value={(draft[f.key] as string | number | null) ?? ""}
                   onChange={(e) =>
-                    setDraft((d) => ({ ...d, [f.key]: f.type === "number" ? Number(e.target.value) : e.target.value }))
+                    setDraft((d) => ({ ...d, [f.key]: f.type === "number" ? (e.target.value === "" ? 0 : Number(e.target.value)) : e.target.value }))
                   }
                   className="min-h-11 w-full rounded-lg border border-border bg-background px-3 text-sm placeholder:text-muted-foreground"
                 />

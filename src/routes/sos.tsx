@@ -1,3 +1,4 @@
+import { phoneValue, textValue, PHONE_PATTERN } from "@/lib/validation";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Siren, MapPin, ArrowLeft, CheckCircle2, Loader2, PhoneCall } from "lucide-react";
@@ -78,6 +79,9 @@ function SOSPage() {
 
   async function sendAlert() {
     try {
+      phoneValue(phone, "Callback phone");
+      textValue(name, "Your name", 200);
+      textValue(message, "Message", 2000);
       setStage("locating");
       const c = await getCurrentPosition();
       setCoords(c);
@@ -313,23 +317,23 @@ function SOSPage() {
               {stage === "sending" && "Notifying responders..."}
             </p>
 
-            <div className="mx-auto mt-10 max-w-md space-y-3 text-left">
+            <div className="mx-auto mt-5 max-w-md sm:mt-10 space-y-3 text-left">
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Optional details (helps responders)
               </p>
-              <textarea
+              <textarea maxLength={2000}
                 value={message} onChange={(e) => setMessage(e.target.value)}
                 placeholder="What's happening? (injury, chest pain, etc.)"
                 className="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
                 rows={2}
               />
               <div className="grid grid-cols-2 gap-3">
-                <input
+                <input maxLength={200}
                   value={name} onChange={(e) => setName(e.target.value)}
                   placeholder="Your name"
                   className="min-w-0 rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none ring-ring focus:ring-2"
                 />
-                <input
+                <input type="tel" maxLength={25} pattern={PHONE_PATTERN}
                   value={phone} onChange={(e) => setPhone(e.target.value)}
                   placeholder="Callback phone"
                   className="min-w-0 rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none ring-ring focus:ring-2"

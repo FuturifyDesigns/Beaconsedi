@@ -58,7 +58,8 @@ const STAGE_ACTION: Partial<Record<ReferralStatus, { to: ReferralStatus; label: 
 function ReferralDetailPage() {
   const { id } = Route.useParams();
   const qc = useQueryClient();
-  const { isAdmin, isResponder } = useRoles();
+  const { isAdmin, isResponder, isOperator, isHospital } = useRoles();
+  const canCoordinate = isAdmin || isOperator || isHospital;
   const detailFn = useServerFn(getReferral);
   const trackFn = useServerFn(getReferralTrack);
   const respondFn = useServerFn(respondReferral);
@@ -216,7 +217,7 @@ function ReferralDetailPage() {
   const statusMeta = REFERRAL_STATUS[referral.status] ?? REFERRAL_STATUS.pending;
   const currentRank = statusRank(referral.status);
   const nextAction = STAGE_ACTION[referral.status];
-  const canCancel = (NEXT_STATUSES[referral.status] ?? []).includes("cancelled") && isAdmin;
+  const canCancel = (NEXT_STATUSES[referral.status] ?? []).includes("cancelled") && canCoordinate;
   const historyByStatus = new Map<string, ReferralHistoryEntry>();
   history.forEach((h) => {
     if (!historyByStatus.has(h.status)) historyByStatus.set(h.status, h);
@@ -273,7 +274,7 @@ function ReferralDetailPage() {
         <div className="grid gap-4 lg:grid-cols-5">
           {/* left column: tracking card + actions */}
           <div className="space-y-4 lg:col-span-3">
-            <section className="rounded-xl border border-border bg-card p-5">
+            <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Ambulance & patient</h2>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm md:grid-cols-3">
                 <Item label="Registration" value={unit?.registration_number ?? "—"} mono big />
@@ -305,7 +306,7 @@ function ReferralDetailPage() {
               )}
             </section>
 
-            <section className="rounded-xl border border-border bg-card p-5">
+            <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Journey</h2>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm md:grid-cols-3">
                 <Item label="Referred" value={clock(referral.created_at)} />
@@ -334,10 +335,10 @@ function ReferralDetailPage() {
             </section>
 
             {/* actions */}
-            <section className="space-y-3 rounded-xl border border-border bg-card p-5">
+            <section className="space-y-3 rounded-xl border border-border bg-card p-4 sm:p-5">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Actions</h2>
 
-              {referral.status === "pending" && (
+              {referral.status === "pending" && canCoordinate && (
                 <div className="flex flex-wrap gap-2">
                   <ActionButton onClick={() => respond.mutate({ decision: "accept" })} disabled={respond.isPending} icon={<Check className="h-4 w-4" />}>
                     Accept referral
@@ -348,7 +349,7 @@ function ReferralDetailPage() {
                 </div>
               )}
 
-              {(referral.status === "accepted" || referral.status === "assigned") && (
+              {canCoordinate && (referral.status === "accepted" || referral.status === "assigned") && (
                 <div>
                   {!assignOpen ? (
                     <ActionButton onClick={() => setAssignOpen(true)} icon={<Navigation className="h-4 w-4" />}>
@@ -367,17 +368,17 @@ function ReferralDetailPage() {
                           {((fleet.data?.units ?? []) as ReferralUnit[])
                             .filter((u) => u.kind === "ambulance" || u.kind === "air")
                             .map((u) => (
-                              <option key={u.id} value={u.id}>
+                              <option key={u.id} value={u.id} disabled={u.status !== "available" && u.id !== referral.unit_id}>
                                 {u.call_sign} · {u.registration_number ?? u.name} · {u.status}
                               </option>
                             ))}
                         </select>
                       </label>
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <input placeholder="Driver name" value={assignForm.driverName} onChange={(e) => setAssignForm((f) => ({ ...f, driverName: e.target.value }))} className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-                        <input placeholder="Driver phone" value={assignForm.driverPhone} onChange={(e) => setAssignForm((f) => ({ ...f, driverPhone: e.target.value }))} className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-                        <input placeholder="Medical crew" value={assignForm.crew} onChange={(e) => setAssignForm((f) => ({ ...f, crew: e.target.value }))} className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-                        <input placeholder="Provider (optional)" value={assignForm.provider} onChange={(e) => setAssignForm((f) => ({ ...f, provider: e.target.value }))} className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                        <input maxLength={200} placeholder="Driver name" value={assignForm.driverName} onChange={(e) => setAssignForm((f) => ({ ...f, driverName: e.target.value }))} className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                        <input type="tel" maxLength={25} placeholder="Driver phone" value={assignForm.driverPhone} onChange={(e) => setAssignForm((f) => ({ ...f, driverPhone: e.target.value }))} className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                        <input maxLength={200} placeholder="Medical crew" value={assignForm.crew} onChange={(e) => setAssignForm((f) => ({ ...f, crew: e.target.value }))} className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                        <input maxLength={200} placeholder="Provider (optional)" value={assignForm.provider} onChange={(e) => setAssignForm((f) => ({ ...f, provider: e.target.value }))} className="rounded-lg border border-border bg-background px-3 py-2 text-sm" />
                       </div>
                       {assign.error && <p className="text-sm text-destructive">{(assign.error as Error).message}</p>}
                       <div className="flex gap-2">
@@ -391,7 +392,7 @@ function ReferralDetailPage() {
                 </div>
               )}
 
-              {nextAction && (isAdmin || isResponder) && (
+              {nextAction && (canCoordinate || isResponder) && (
                 <ActionButton onClick={() => advance.mutate({ to: nextAction.to })} disabled={advance.isPending} icon={<Check className="h-4 w-4" />}>
                   {nextAction.label}
                 </ActionButton>
@@ -405,8 +406,8 @@ function ReferralDetailPage() {
                     </ActionButton>
                   ) : (
                     <div className="space-y-3 rounded-lg border border-border p-4">
-                      <input placeholder="Received by (name, role)" value={handoverForm.receivedBy} onChange={(e) => setHandoverForm((f) => ({ ...f, receivedBy: e.target.value }))} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-                      <textarea placeholder="Handover notes" rows={2} value={handoverForm.notes} onChange={(e) => setHandoverForm((f) => ({ ...f, notes: e.target.value }))} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                      <input maxLength={120} placeholder="Received by (name, role)" value={handoverForm.receivedBy} onChange={(e) => setHandoverForm((f) => ({ ...f, receivedBy: e.target.value }))} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                      <textarea maxLength={400} placeholder="Handover notes" rows={2} value={handoverForm.notes} onChange={(e) => setHandoverForm((f) => ({ ...f, notes: e.target.value }))} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
                       <div className="flex gap-2">
                         <ActionButton
                           onClick={() => advance.mutate({ to: "handover", handoverReceivedBy: handoverForm.receivedBy, handoverNotes: handoverForm.notes || undefined })}
@@ -458,7 +459,7 @@ function ReferralDetailPage() {
               />
             </div>
 
-            <section className="rounded-xl border border-border bg-card p-5">
+            <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
               <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Journey timeline</h2>
               <ol className="space-y-3">
                 {JOURNEY_STAGES.map((stage, i) => {
