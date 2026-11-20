@@ -1,6 +1,7 @@
 import { SHIFT_EVENT_LABEL, formatDuration, workedSeconds, type Shift, type ShiftEvent } from "@/lib/responder";
 import { clock as clockLabel } from "@/lib/ops";
 import { Coffee, LogIn, LogOut, Play } from "lucide-react";
+import { useTicker } from "@/hooks/useTracking";
 
 type Props = {
   shift: Shift | null;
@@ -14,6 +15,7 @@ type Props = {
 };
 
 export function ShiftPanel({ shift, events, history, busy, onClockIn, onClockOut, onBreakStart, onBreakEnd }: Props) {
+  useTicker(1000);
   const onBreak = !!shift?.break_started_at;
 
   return (
@@ -54,7 +56,7 @@ export function ShiftPanel({ shift, events, history, busy, onClockIn, onClockOut
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-xl border border-border bg-card p-4">
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Shift timeline</h3>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{shift ? "Current shift timeline" : "Latest shift timeline"}</h3>
           {!events.length ? (
             <p className="text-xs text-muted-foreground">No shift activity yet.</p>
           ) : (

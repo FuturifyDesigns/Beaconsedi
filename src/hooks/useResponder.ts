@@ -20,6 +20,7 @@ export function useCurrentUser() {
 export function useResponderProfile(userId: string | undefined) {
   return useQuery({
     queryKey: ["responder", "profile", userId],
+    refetchInterval: 10_000,
     enabled: !!userId,
     queryFn: async () => {
       const { data, error } = await supabase.from("responder_profiles").select("*").eq("user_id", userId!).maybeSingle();
@@ -33,7 +34,7 @@ export function useTeam(enabled: boolean) {
   return useQuery({
     queryKey: ["responder", "team"],
     enabled,
-    refetchInterval: 60_000,
+    refetchInterval: 10_000,
     queryFn: async () => {
       const { data, error } = await supabase.from("responder_profiles").select("*").order("full_name");
       if (error) throw error;
@@ -46,7 +47,7 @@ export function useActiveShift(userId: string | undefined) {
   return useQuery({
     queryKey: ["responder", "shift", userId],
     enabled: !!userId,
-    refetchInterval: 60_000,
+    refetchInterval: 10_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("shifts")
@@ -65,6 +66,7 @@ export function useActiveShift(userId: string | undefined) {
 export function useShiftHistory(userId: string | undefined) {
   return useQuery({
     queryKey: ["responder", "shift-history", userId],
+    refetchInterval: 10_000,
     enabled: !!userId,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -82,6 +84,7 @@ export function useShiftHistory(userId: string | undefined) {
 export function useShiftEvents(shiftId: string | undefined) {
   return useQuery({
     queryKey: ["responder", "shift-events", shiftId],
+    refetchInterval: 10_000,
     enabled: !!shiftId,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -120,7 +123,7 @@ export function useNotifications(userId: string | undefined) {
   return useQuery({
     queryKey: ["responder", "notifications", userId],
     enabled: !!userId,
-    refetchInterval: 60_000,
+    refetchInterval: 10_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("notifications")
@@ -175,6 +178,16 @@ export function useResponderRealtime(enabled: boolean, userId: string | undefine
       })
       .subscribe();
 
+    const staffChannel = supabase.channel(`staff-workflows-${userId ?? "staff"}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "shifts" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["responder", "shift"] });
+        queryClient.invalidateQueries({ queryKey: ["responder", "shift-history"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "shift_events" }, () => queryClient.invalidateQueries({ queryKey: ["responder", "shift-events"] }))
+      .on("postgres_changes", { event: "*", schema: "public", table: "responder_profiles" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["responder", "profile"] });
+        queryClient.invalidateQueries({ queryKey: ["responder", "team"] });
+      }).subscribe();
     let notifChannel: ReturnType<typeof supabase.channel> | null = null;
     if (userId) {
       notifChannel = supabase
@@ -194,6 +207,7 @@ export function useResponderRealtime(enabled: boolean, userId: string | undefine
 
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(staffChannel);
       if (notifChannel) supabase.removeChannel(notifChannel);
     };
   }, [enabled, userId, queryClient]);

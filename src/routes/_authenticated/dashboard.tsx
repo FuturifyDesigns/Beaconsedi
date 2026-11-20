@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Siren, MapPin, Clock, Radio } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/AppShell";
-import { useIsResponder } from "@/hooks/useRole";
+import { useRoles } from "@/hooks/useRole";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [
@@ -18,7 +18,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 function Dashboard() {
-  const { isResponder } = useIsResponder();
+  const { isResponder, isAdmin } = useRoles();
   const { data: alerts } = useQuery({
     queryKey: ["my-alerts"],
     queryFn: async () => {
@@ -54,9 +54,10 @@ function Dashboard() {
           <span className="text-xs font-semibold uppercase tracking-wider">Go →</span>
         </Link>
 
-        {isResponder && (
+        {(isResponder || isAdmin) && (
           <Link
             to="/responder"
+            search={{ section: "dashboard" }}
             className="mt-4 flex items-center gap-4 rounded-2xl border border-border bg-card p-4 hover:bg-accent"
           >
             <div className="grid h-10 w-10 place-items-center rounded-lg bg-emergency/10 text-emergency">
@@ -69,7 +70,9 @@ function Dashboard() {
           </Link>
         )}
 
-        <section className="mt-10">
+        {(isResponder || isAdmin) && <Link to="/crew" className="mt-3 block rounded-2xl border border-border bg-card p-4 hover:bg-accent"><p className="font-medium">Crew dashboard</p><p className="text-xs text-muted-foreground">Clock in and out, create your team profile, view your vehicle and respond to calls.</p></Link>}
+
+        <section className="mt-6">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Recent alerts
           </h2>

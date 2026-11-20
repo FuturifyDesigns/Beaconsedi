@@ -30,10 +30,10 @@ export function AppShell({ children }: Props) {
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     ...(isAdmin ? [{ to: "/operations", label: "Operations", icon: Activity }] : []),
     ...(isStaff ? [{ to: "/referrals", label: "Referrals", icon: ArrowLeftRight }] : []),
-    ...(isResponder
+    ...((isResponder || isAdmin)
       ? [
           { to: "/responder", label: "Responder", icon: Radio },
-          { to: "/crew", label: "Crew app", icon: Ambulance },
+          { to: "/crew", label: "Crew dashboard", icon: Ambulance },
         ]
       : []),
     { to: "/care", label: "Care circle", icon: HeartHandshake },

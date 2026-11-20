@@ -114,6 +114,13 @@ export async function applyIncidentAction(incident: Incident, action: LifecycleA
   let eta = incident.eta_minutes;
 
   if (action === "dispatch") {
+    const { data: admin, error: roleError } = await supabase.rpc("has_role", { _user_id: ctx.userId, _role: "admin" });
+    if (roleError) throw roleError;
+    if (!admin) {
+      const { error } = await supabase.rpc("accept_crew_incident" as never, { _alert_id: incident.id } as never);
+      if (error) throw new Error(error.message);
+      return;
+    }
     const units = ctx.units ?? [];
     const preferred = ctx.preferredUnitId ? units.find((u) => u.id === ctx.preferredUnitId) : undefined;
     const match = nearestUnit(incident, units);

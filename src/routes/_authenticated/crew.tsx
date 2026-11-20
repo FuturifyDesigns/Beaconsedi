@@ -1,3 +1,9 @@
+import { AppShell } from "@/components/AppShell";
+import { ShiftPanel } from "@/components/command/ShiftPanel";
+import { ProfilePanel } from "@/components/command/ProfilePanel";
+import { TeamPanel } from "@/components/command/TeamPanel";
+import { VehiclePanel, type VehicleRecord } from "@/components/command/VehiclePanel";
+import { useStaffShiftControls, useStaffProfileEditor } from "@/hooks/useStaffWorkflows";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -7,9 +13,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { GoogleMap, type MapMarker, type MapRoute } from "@/components/GoogleMap";
 import { NavigateButton } from "@/components/NavigateButton";
 import { VoiceNotes } from "@/components/VoiceNotes";
-import { useIsResponder } from "@/hooks/useRole";
+import { useRoles } from "@/hooks/useRole";
 import { useIncidents, useUnits } from "@/hooks/useOpsData";
-import { useAssignedUnit, useCurrentUser, useResponderProfile, useResponderRealtime } from "@/hooks/useResponder";
+import { useActiveShift, useShiftHistory, useShiftEvents, useTeam, useAssignedUnit, useCurrentUser, useResponderProfile, useResponderRealtime } from "@/hooks/useResponder";
 import { useResponderBroadcast } from "@/hooks/useTracking";
 import { useLiveRoute, useEtaCountdown } from "@/hooks/useMaps";
 import { GPS_STATE_META, gpsState } from "@/lib/tracking";
@@ -32,14 +38,25 @@ export const Route = createFileRoute("/_authenticated/crew")({
 });
 
 function CrewApp() {
-  const { isResponder, loading } = useIsResponder();
+  const { isResponder: responderRole, isAdmin, loading } = useRoles();
+  const isResponder = responderRole || isAdmin;
   const user = useCurrentUser();
   const queryClient = useQueryClient();
 
-  const [onDuty, setOnDuty] = useState(false);
+  const [section, setSection] = useState<"response" | "shift" | "profile" | "team" | "vehicle">("response");
+  const shiftQuery = useActiveShift(user?.id);
+  const { data: shift } = shiftQuery;
+  const { data: shiftHistory = [] } = useShiftHistory(user?.id);
+  const { data: shiftEvents = [] } = useShiftEvents(shift?.id ?? shiftHistory[0]?.id);
+  const { data: team = [] } = useTeam(isResponder);
+  const shiftControls = useStaffShiftControls();
+  const profileEditor = useStaffProfileEditor(user);
+  const onDuty = !!shift;
+
   const [busy, setBusy] = useState(false);
 
-  const { data: profile } = useResponderProfile(user?.id);
+  const profileQuery = useResponderProfile(user?.id);
+  const { data: profile } = profileQuery;
   const { data: incidents = [] } = useIncidents(isResponder);
   const { data: units = [] } = useUnits(isResponder);
   const { data: vehicle } = useAssignedUnit(profile?.assigned_unit_id);
@@ -47,7 +64,7 @@ function CrewApp() {
 
   const unitId = profile?.assigned_unit_id ?? null;
 
-  const active = useMemo(() => incidents.filter((i) => i.status !== "resolved"), [incidents]);
+  const active = useMemo(() => incidents.filter((i) => !["resolved", "cancelled"].includes(i.status)), [incidents]);
 
   /** The call this crew is committed to. */
   const job = useMemo<Incident | null>(
@@ -80,7 +97,7 @@ function CrewApp() {
     const list: MapMarker[] = [];
     if (scene && job) {
       list.push({
-        id: "scene", lat: scene.lat, lng: scene.lng, scale: 14, pulse: true,
+        image: "patient", id: "scene", lat: scene.lat, lng: scene.lng, scale: 14, pulse: true,
         color: PRIORITY_HEX[job.priority] ?? PRIORITY_HEX['high'],
         title: `${job.incident_code ?? "SOS"} — ${job.patient_name ?? "Anonymous"}`,
       });
@@ -124,14 +141,8 @@ function CrewApp() {
     buzz([30, 40, 30]);
     setBusy(true);
     try {
-      const ctx = { userId: user.id, actorName: profile?.full_name ?? user.email ?? null, units, preferredUnitId: unitId };
-      let current = incident;
-      if (incident.status === "active") {
-        await applyIncidentAction(current, "acknowledge", ctx);
-        current = { ...current, status: "acknowledged", responder_id: user.id };
-      }
-      await applyIncidentAction(current, "dispatch", ctx);
-      if (!onDuty) setOnDuty(true);
+      const { error } = await supabase.rpc("accept_crew_incident" as never, { _alert_id: incident.id } as never);
+      if (error) throw error;
       toast.success("Call accepted — routing to the scene");
       refresh(incident.id);
     } catch (e) {
@@ -141,12 +152,16 @@ function CrewApp() {
     }
   }
 
-  async function setDuty(next: boolean) {
-    setOnDuty(next);
-    if (!user) return;
-    const availability = next ? "available" : "offline";
-    await supabase.from("responder_profiles").upsert({ user_id: user.id, availability } as never, { onConflict: "user_id" });
-    queryClient.invalidateQueries({ queryKey: ["responder", "profile", user.id] });
+  function setDuty(next: boolean) {
+    shiftControls.change(next ? "clock_in" : "clock_out");
+  }
+
+  async function setVehicleStatus(status: string) {
+    if (!vehicle) return;
+    const { error } = await supabase.from("responder_units").update({ status }).eq("id", vehicle.id);
+    if (error) { toast.error(error.message); return; }
+    await queryClient.invalidateQueries({ queryKey: ["responder", "unit"] });
+    await queryClient.invalidateQueries({ queryKey: ["ops", "units"] });
   }
 
   if (loading) {
@@ -167,8 +182,8 @@ function CrewApp() {
   const km = here && scene ? distanceKm(here, scene) : null;
 
   return (
-    <div className="mx-auto min-h-screen w-full max-w-md bg-background pb-8">
-      <header className="sticky top-0 z-10 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
+    <AppShell><div className="mx-auto min-h-screen w-full max-w-5xl bg-background pb-8">
+      <header className="border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-emergency text-emergency-foreground">
@@ -180,16 +195,17 @@ function CrewApp() {
             </div>
           </div>
           <button
-            onClick={() => void setDuty(!onDuty)}
+            onClick={() => setDuty(!onDuty)}
+            disabled={shiftControls.busy || shiftQuery.isPending || shiftQuery.isError}
             aria-pressed={onDuty}
             className={`rounded-full px-4 py-2 text-xs font-semibold transition ${onDuty ? "bg-success text-success-foreground" : "bg-muted text-muted-foreground"}`}
           >
-            {onDuty ? "On duty" : "Off duty"}
+            {onDuty ? "Clock out" : "Clock in"}
           </button>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
           <span className={`rounded-full px-2 py-0.5 font-semibold ${gps.chip}`}>
-            <Radio className="mr-1 inline h-3 w-3" aria-hidden="true" />{onDuty ? gps.label : "GPS off"}
+            <Radio className="mr-1 inline h-3 w-3" aria-hidden="true" />{onDuty || job ? gps.label : "GPS off"}
           </span>
           {broadcast.point?.accuracy != null && <span className="text-muted-foreground">±{Math.round(broadcast.point.accuracy)} m</span>}
           {broadcast.point?.speed != null && <span className="text-muted-foreground">{Math.round(broadcast.point.speed * 3.6)} km/h</span>}
@@ -199,7 +215,18 @@ function CrewApp() {
         </div>
       </header>
 
+      <nav aria-label="Crew sections" className="flex gap-1 overflow-x-auto border-b border-border p-2">
+        {([['response','Response'],['shift','Shifts'],['profile','Team profile'],['team','Team members'],['vehicle','Assigned vehicle']] as const).map(([key,label]) => <button key={key} aria-current={section===key ? "page" : undefined} onClick={() => setSection(key)} className={`shrink-0 rounded-lg px-3 py-2 text-sm ${section===key ? "bg-emergency text-emergency-foreground" : "text-muted-foreground"}`}>{label}</button>)}
+      </nav>
       <main className="space-y-4 px-4 py-4">
+        {shiftQuery.error && <p role="alert" className="text-sm text-destructive">Could not load your shift. Please reload before changing duty status.</p>}
+        {!profile?.full_name && <div className="rounded-xl border border-border bg-card p-3 text-sm">Create your team profile before clocking in. <button onClick={() => setSection("profile")} className="font-semibold text-emergency underline">Create team profile</button></div>}
+        {section === "shift" && <ShiftPanel shift={shift ?? null} events={shiftEvents} history={shiftHistory} busy={shiftControls.busy || shiftQuery.isPending || shiftQuery.isError} onClockIn={() => shiftControls.change("clock_in")} onClockOut={() => shiftControls.change("clock_out")} onBreakStart={() => shiftControls.change("break_start")} onBreakEnd={() => shiftControls.change("break_end")} />}
+        {section === "profile" && (profileQuery.isPending ? <p className="text-sm text-muted-foreground">Loading team profile…</p> : profileQuery.error ? <p role="alert" className="text-sm text-destructive">Could not load your team profile. Please reload before editing.</p> : <ProfilePanel profile={profile ?? null} saving={profileEditor.saving} onSave={profileEditor.save} />)}
+        {section === "team" && <TeamPanel team={team} units={units} />}
+        {section === "vehicle" && <VehiclePanel vehicle={(vehicle as VehicleRecord) ?? null} onStatus={setVehicleStatus} />}
+        {section === "response" && <>
+
         <section aria-label="Route map" className="overflow-hidden rounded-2xl border border-border">
           <div className="h-[260px] w-full">
             <GoogleMap
@@ -296,6 +323,7 @@ function CrewApp() {
           <h2 className="flex items-center gap-1.5 text-sm font-semibold">
             <Siren className="h-4 w-4 text-emergency" aria-hidden="true" /> Incoming SOS ({queue.length})
           </h2>
+          {(!shift || shift.status !== "on_duty" || !unitId) && <p className="text-xs text-muted-foreground">Save your team profile, clock in and have an ambulance assigned before accepting a call.</p>}
           {!queue.length && <p className="rounded-xl border border-border p-4 text-xs text-muted-foreground">Nothing waiting right now.</p>}
           {queue.map((i) => {
             const d = here ? distanceKm(here, { lat: i.latitude, lng: i.longitude }) : null;
@@ -313,7 +341,7 @@ function CrewApp() {
                   </span>
                 </div>
                 <button
-                  disabled={busy}
+                  disabled={busy || !shift || shift.status !== "on_duty" || !unitId}
                   onClick={() => void accept(i)}
                   className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emergency px-4 py-3 text-sm font-bold text-emergency-foreground disabled:opacity-60"
                 >
@@ -324,7 +352,8 @@ function CrewApp() {
             );
           })}
         </section>
+        </>}
       </main>
-    </div>
+    </div></AppShell>
   );
 }

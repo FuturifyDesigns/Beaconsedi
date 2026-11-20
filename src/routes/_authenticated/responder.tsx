@@ -1,3 +1,4 @@
+import { useStaffShiftControls, useStaffProfileEditor } from "@/hooks/useStaffWorkflows";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
@@ -8,7 +9,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { GoogleMap, type MapMarker } from "@/components/GoogleMap";
-import { useIsResponder } from "@/hooks/useRole";
+import { useRoles } from "@/hooks/useRole";
 import { useHospitals, useIncidentEvents, useIncidents, useUnits } from "@/hooks/useOpsData";
 import {
   useActiveShift, useAssignedUnit, useCurrentUser, useInactivityLogout, useNotifications, useOwnPosition,
@@ -27,8 +28,8 @@ import { SettingsPanel, DEFAULT_PREFS, type CommandPrefs } from "@/components/co
 import { TimelinePanel } from "@/components/ops/TimelinePanel";
 import { INCIDENT_STATUS, PRIORITY_HEX, logAudit, type Incident } from "@/lib/ops";
 import { ACTION_META, applyIncidentAction, type LifecycleAction } from "@/lib/incident-lifecycle";
-import { formatDuration, logShiftEvent, workedSeconds, type ResponderProfile } from "@/lib/responder";
-import { useResponderBroadcast } from "@/hooks/useTracking";
+import { formatDuration, workedSeconds, type ResponderProfile } from "@/lib/responder";
+import { useResponderBroadcast, useTicker } from "@/hooks/useTracking";
 import { GPS_STATE_META, gpsState } from "@/lib/tracking";
 
 
@@ -44,18 +45,23 @@ export const Route = createFileRoute("/_authenticated/responder")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
+  validateSearch: (search: Record<string, unknown>) => ({ section: ["dashboard","incidents","history","vehicle","shift","team","notifications","profile","settings"].includes(String(search.section)) ? String(search.section) as SectionKey : undefined }),
   component: ResponderCommandPage,
 });
 
 const PREFS_KEY = "beacon.command.prefs";
 
 function ResponderCommandPage() {
-  const { isResponder, loading } = useIsResponder();
+  useTicker(10_000);
+  const { isResponder: responderRole, isAdmin, loading } = useRoles();
+  const isResponder = responderRole || isAdmin;
   const user = useCurrentUser();
+  const shiftControls = useStaffShiftControls();
+  const profileEditor = useStaffProfileEditor(user);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [section, setSection] = useState<SectionKey>("dashboard");
+  const [section, setSection] = useState<SectionKey>(Route.useSearch().section ?? "dashboard");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [prefs, setPrefs] = useState<CommandPrefs>(DEFAULT_PREFS);
@@ -76,11 +82,13 @@ function ResponderCommandPage() {
   const { data: incidents = [] } = useIncidents(enabled);
   const { data: units = [] } = useUnits(enabled);
   const { data: hospitals = [] } = useHospitals(enabled);
-  const { data: profile } = useResponderProfile(user?.id);
+  const profileQuery = useResponderProfile(user?.id);
+  const { data: profile } = profileQuery;
   const { data: team = [] } = useTeam(enabled);
-  const { data: shift } = useActiveShift(user?.id);
-  const { data: shiftEvents = [] } = useShiftEvents(shift?.id);
+  const shiftQuery = useActiveShift(user?.id);
+  const { data: shift } = shiftQuery;
   const { data: shiftHistory = [] } = useShiftHistory(user?.id);
+  const { data: shiftEvents = [] } = useShiftEvents(shift?.id ?? shiftHistory[0]?.id);
   const { data: vehicle } = useAssignedUnit(profile?.assigned_unit_id);
   const { data: notifications = [] } = useNotifications(user?.id);
   const ownPos = useOwnPosition(enabled);
@@ -157,87 +165,22 @@ function ResponderCommandPage() {
 
   async function updateAvailability(value: string) {
     if (!user) return;
+    if (value === "offline" && shift) { shiftControls.change("clock_out"); return; }
+    if (value === "on_break") { shiftControls.change("break_start"); return; }
+    if (value === "available" && !shift) { shiftControls.change("clock_in"); return; }
+    if (value === "available" && shift?.status === "on_break") { shiftControls.change("break_end"); return; }
     const { error } = await supabase
       .from("responder_profiles")
       .upsert({ user_id: user.id, availability: value } as never, { onConflict: "user_id" });
     if (error) return toast.error(error.message);
     queryClient.invalidateQueries({ queryKey: ["responder", "profile", user.id] });
-    if (shift) void logShiftEvent(shift.id, user.id, "status_change", value);
+
   }
 
-  async function saveProfile(draft: Partial<ResponderProfile>) {
-    if (!user) return;
-    setBusy(true);
-    const payload = { ...draft, date_of_birth: draft.date_of_birth || null, license_expiry: draft.license_expiry || null, user_id: user.id, email: draft.email ?? user.email } as never;
-    const { error } = await supabase.from("responder_profiles").upsert(payload, { onConflict: "user_id" });
-    setBusy(false);
-    if (error) return toast.error(error.message);
-    toast.success("Profile saved");
-    await logAudit("responder_profile_update", "responder_profile", user.id);
-    queryClient.invalidateQueries({ queryKey: ["responder", "profile", user.id] });
-  }
-
-  function refreshShift() {
-    queryClient.invalidateQueries({ queryKey: ["responder", "shift", user?.id] });
-    queryClient.invalidateQueries({ queryKey: ["responder", "shift-history", user?.id] });
-    queryClient.invalidateQueries({ queryKey: ["responder", "shift-events"] });
-  }
-
-  async function clockIn() {
-    if (!user) return;
-    setBusy(true);
-    const { data, error } = await supabase
-      .from("shifts")
-      .insert({ user_id: user.id, unit_id: profile?.assigned_unit_id ?? null, status: "on_duty" } as never)
-      .select("id")
-      .single();
-    setBusy(false);
-    if (error) return toast.error(error.message);
-    await logShiftEvent((data as { id: string }).id, user.id, "clock_in");
-    await updateAvailability("available");
-    await logAudit("shift_clock_in", "shift", (data as { id: string }).id);
-    toast.success("Clocked in");
-    refreshShift();
-  }
-
-  async function clockOut() {
-    if (!user || !shift) return;
-    setBusy(true);
-    const extraBreak = shift.break_started_at ? Math.round((Date.now() - new Date(shift.break_started_at).getTime()) / 1000) : 0;
-    const { error } = await supabase
-      .from("shifts")
-      .update({ ended_at: new Date().toISOString(), break_started_at: null, break_seconds: shift.break_seconds + extraBreak, status: "completed" } as never)
-      .eq("id", shift.id);
-    setBusy(false);
-    if (error) return toast.error(error.message);
-    await logShiftEvent(shift.id, user.id, "clock_out", formatDuration(workedSeconds(shift)));
-    await updateAvailability("offline");
-    await logAudit("shift_clock_out", "shift", shift.id);
-    toast.success("Clocked out");
-    refreshShift();
-  }
-
-  async function breakStart() {
-    if (!user || !shift) return;
-    const { error } = await supabase.from("shifts").update({ break_started_at: new Date().toISOString(), status: "on_break" } as never).eq("id", shift.id);
-    if (error) return toast.error(error.message);
-    await logShiftEvent(shift.id, user.id, "break_start");
-    await updateAvailability("on_break");
-    refreshShift();
-  }
-
-  async function breakEnd() {
-    if (!user || !shift || !shift.break_started_at) return;
-    const secs = Math.round((Date.now() - new Date(shift.break_started_at).getTime()) / 1000);
-    const { error } = await supabase
-      .from("shifts")
-      .update({ break_started_at: null, break_seconds: shift.break_seconds + secs, status: "on_duty" } as never)
-      .eq("id", shift.id);
-    if (error) return toast.error(error.message);
-    await logShiftEvent(shift.id, user.id, "break_end");
-    await updateAvailability("available");
-    refreshShift();
-  }
+  const clockIn = () => shiftControls.change("clock_in");
+  const clockOut = () => shiftControls.change("clock_out");
+  const breakStart = () => shiftControls.change("break_start");
+  const breakEnd = () => shiftControls.change("break_end");
 
   async function setVehicleStatus(status: string) {
     if (!vehicle) return;
@@ -368,6 +311,8 @@ function ResponderCommandPage() {
       onSignOut={signOut}
       onAvailability={updateAvailability}
     >
+      {shiftQuery.error && <p role="alert" className="mb-3 text-sm text-destructive">Could not load your shift. Please reload before changing duty status.</p>}
+      {!profile?.full_name && <div className="mb-4 rounded-xl border border-border bg-card p-3 text-sm">Create your team profile before clocking in. <button onClick={() => setSection("profile")} className="font-semibold text-emergency underline">Create team profile</button></div>}
       {section === "dashboard" && (
         <div className="space-y-4">
           {mapBlock}
@@ -452,7 +397,7 @@ function ResponderCommandPage() {
           shift={shift ?? null}
           events={shiftEvents}
           history={shiftHistory}
-          busy={busy}
+          busy={busy || shiftControls.busy || shiftQuery.isPending || shiftQuery.isError}
           onClockIn={clockIn}
           onClockOut={clockOut}
           onBreakStart={breakStart}
@@ -470,7 +415,7 @@ function ResponderCommandPage() {
         />
       )}
 
-      {section === "profile" && <ProfilePanel profile={(profile as ResponderProfile) ?? null} saving={busy} onSave={saveProfile} />}
+      {section === "profile" && (profileQuery.isPending ? <p className="text-sm text-muted-foreground">Loading team profile…</p> : profileQuery.error ? <p role="alert" className="text-sm text-destructive">Could not load your team profile. Please reload before editing.</p> : <ProfilePanel profile={(profile as ResponderProfile) ?? null} saving={profileEditor.saving} onSave={profileEditor.save} />)}
 
       {section === "settings" && <SettingsPanel prefs={prefs} onPrefs={setPrefs} />}
     </CommandShell>

@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { AVAILABILITY, initials, type ResponderProfile } from "@/lib/responder";
 import { Bell, LogOut } from "lucide-react";
@@ -88,6 +89,7 @@ export function CommandShell({
       </aside>
 
       <div className="lg:pl-56">
+        <nav aria-label="App dashboards" className="flex flex-wrap gap-4 border-b border-border px-4 py-2 text-xs"><Link to="/dashboard" className="text-muted-foreground hover:text-foreground">Main dashboard</Link><Link to="/crew" className="font-semibold text-emergency">Crew dashboard</Link></nav>
         {/* Top bar */}
         <header className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-border bg-background/85 px-4 py-3 backdrop-blur">
           <div className="min-w-0">

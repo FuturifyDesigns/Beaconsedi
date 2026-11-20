@@ -63,6 +63,7 @@ export function ProfilePanel({ profile, saving, onSave }: Props) {
                 <input
                   id={`rp-${String(f.key)}`}
                   type={f.type ?? "text"}
+                  required={f.key === "full_name"}
                   min={f.type === "number" ? 0 : undefined}
                   max={f.type === "number" ? 80 : f.key === "date_of_birth" ? new Date().toISOString().slice(0, 10) : undefined}
                   step={f.type === "number" ? 1 : undefined}
