@@ -2,7 +2,7 @@
 // Network-first for everything; only when the network fails is the offline page served.
 const SCOPE = self.registration.scope;
 const CACHE_PREFIX = `beacon-offline:${SCOPE}:`;
-const CACHE = `${CACHE_PREFIX}v3`;
+const CACHE = `${CACHE_PREFIX}v4`;
 const OFFLINE_URL = new URL("offline.html", SCOPE).href;
 const ASSETS = [OFFLINE_URL, new URL("icon-192.png", SCOPE).href];
 
@@ -27,7 +27,13 @@ self.addEventListener("fetch", (event) => {
   if (req.mode === "navigate") {
     event.respondWith(fetch(req).catch(async () => {
       const cache = await caches.open(CACHE);
-      return (await cache.match(OFFLINE_URL)) ?? Response.error();
+      const offline = await cache.match(OFFLINE_URL);
+      // Static hosts may redirect offline.html to /offline. A redirected cached
+      // response cannot satisfy a navigation whose redirect mode is manual.
+      // Reconstruct it to preserve the page while clearing the redirect flag.
+      return offline
+        ? new Response(offline.body, { status: offline.status, statusText: offline.statusText, headers: offline.headers })
+        : Response.error();
     }));
     return;
   }
