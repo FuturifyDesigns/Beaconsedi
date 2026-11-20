@@ -121,11 +121,11 @@ function AdminPage() {
                 .map((u) => {
                   const has = (r: Role) => u.roles.includes(r);
                   return (
-                    <li key={u.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <li key={u.id} className="space-y-4 p-4 sm:p-5">
                       <div className="min-w-0">
-                        <p className="flex items-center gap-2 truncate font-medium">
-                          <UserRound className="h-4 w-4 text-muted-foreground" />
-                          {u.email || u.id}
+                        <p className="flex min-w-0 items-start gap-2 font-medium">
+                          <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                          <span className="min-w-0 break-all">{u.email || u.id}</span>
                         </p>
                         <p className="mt-1 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
                           {u.roles.length === 0 && <span>no roles</span>}
@@ -139,11 +139,10 @@ function AdminPage() {
                           ))}
                         </p>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="space-y-3">
                         {(has("responder") || has("crew")) && (
-                          <label className="flex w-full min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground sm:w-auto sm:min-w-64">
-                            <Ambulance className="h-4 w-4 shrink-0" aria-hidden="true" />
-                            <span className="sr-only">Assigned vehicle for {u.email}</span>
+                          <label className="grid w-full min-w-0 gap-1.5 text-xs text-muted-foreground sm:max-w-md">
+                            <span className="inline-flex items-center gap-1.5"><Ambulance className="h-4 w-4 shrink-0" aria-hidden="true" />Assigned vehicle</span>
                             <select
                               aria-label={`Assigned vehicle for ${u.email}`}
                               value={(vehicles.data ?? []).find((vehicle) => vehicle.assigned_user_id === u.id)?.id ?? ""}
@@ -167,6 +166,7 @@ function AdminPage() {
                             </select>
                           </label>
                         )}
+                        <div aria-label={`Roles for ${u.email}`} className="grid grid-cols-2 items-stretch gap-2 sm:grid-cols-3 xl:grid-cols-5">
                         <RoleToggle
                           label="Responder"
                           icon={<Radio className="h-3.5 w-3.5" />}
@@ -207,6 +207,7 @@ function AdminPage() {
                           onRevoke={() => revoke.mutate({ userId: u.id, role: "admin" })}
                           pending={grant.isPending || revoke.isPending}
                         />
+                        </div>
                       </div>
                     </li>
                   );
@@ -246,7 +247,7 @@ function RoleToggle({
       size="sm"
       onClick={onRevoke}
       disabled={pending}
-      className="text-muted-foreground"
+      className="h-auto min-h-11 w-full justify-start whitespace-normal px-3 py-2 text-left leading-tight text-muted-foreground"
     >
       <ShieldOff className="h-3.5 w-3.5" /> Revoke {label}
     </Button>
@@ -256,7 +257,7 @@ function RoleToggle({
       size="sm"
       onClick={onGrant}
       disabled={pending}
-      className="bg-emergency text-emergency-foreground hover:bg-emergency/90"
+      className="h-auto min-h-11 w-full justify-start whitespace-normal bg-emergency px-3 py-2 text-left leading-tight text-emergency-foreground hover:bg-emergency/90"
     >
       {icon} Grant {label}
     </Button>
