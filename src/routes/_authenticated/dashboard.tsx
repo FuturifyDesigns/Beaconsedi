@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouteContext } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Siren, MapPin, Clock, Radio } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,12 +18,15 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 function Dashboard() {
+  const { user } = useRouteContext({ from: "/_authenticated" });
   const { isResponder, isAdmin } = useRoles();
   const { data: alerts } = useQuery({
-    queryKey: ["my-alerts"],
+    queryKey: ["my-alerts", user.id],
+    refetchInterval: 5000,
     queryFn: async () => {
       const { data, error } = await supabase.from("alerts")
         .select("id, status, latitude, longitude, message, created_at, responder_notes")
+        .eq("patient_id", user.id)
         .order("created_at", { ascending: false }).limit(20);
       if (error) throw error;
       return data;

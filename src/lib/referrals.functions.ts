@@ -77,15 +77,17 @@ export const getReferral = createServerFn({ method: "POST" })
     const ctx = context as unknown as Ctx;
     await requireStaff(ctx);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const [{ data: referral, error }, { data: history }, { data: handover }] = await Promise.all([
+    const [{ data: referral, error }, { data: history, error: historyError }, { data: handover, error: handoverError }] = await Promise.all([
       supabaseAdmin.from("referrals").select(REFERRAL_SELECT).eq("id", data.id).maybeSingle(),
       supabaseAdmin.from("referral_status_history").select("*").eq("referral_id", data.id).order("created_at"),
       supabaseAdmin.from("referral_handover").select("*").eq("referral_id", data.id).order("created_at"),
     ]);
     if (error) throw error;
     if (!referral) throw new Error("Referral not found");
+    if (historyError) throw historyError;
+    if (handoverError) throw handoverError;
     const facilityIds = [referral.from_facility_id, referral.to_facility_id];
-    const [{ data: facilities }, { data: unit }] = await Promise.all([
+    const [{ data: facilities, error: facilitiesError }, { data: unit, error: unitError }] = await Promise.all([
       supabaseAdmin.from("hospitals").select("id, name, latitude, longitude, phone, diversion_status").in("id", facilityIds),
       referral.unit_id
         ? supabaseAdmin
@@ -93,8 +95,10 @@ export const getReferral = createServerFn({ method: "POST" })
             .select("id, name, call_sign, kind, status, vehicle, registration_number, phone, latitude, longitude, heading, speed, last_location_update")
             .eq("id", referral.unit_id)
             .maybeSingle()
-        : Promise.resolve({ data: null }),
+        : Promise.resolve({ data: null, error: null }),
     ]);
+    if (facilitiesError) throw facilitiesError;
+    if (unitError) throw unitError;
     return { referral, history: history ?? [], handover: handover ?? [], facilities: facilities ?? [], unit: unit ?? null };
   });
 

@@ -42,6 +42,8 @@ const CSP_SOURCES = {
   /** Google Fonts stylesheet + files (only if a font link is added later). */
   style: ["https://fonts.googleapis.com"],
   font: ["https://fonts.gstatic.com"],
+  /** Signed voice recordings from Beacon's private storage bucket. */
+  media: ["https://jcqmgwvshbctlokhmras.supabase.co"],
   /** Hosts allowed to embed Beacon (Lovable editor preview + published app). */
   frameAncestors: ["https://*.lovable.app", "https://*.lovableproject.com", "https://lovable.dev"],
 } as const;
@@ -60,7 +62,7 @@ export function contentSecurityPolicy(dev: boolean, lovablePreview = false): str
     "connect-src": ["'self'", ...connectExtra, ...CSP_SOURCES.connect],
     "frame-src": ["'self'", ...CSP_SOURCES.frame],
     "worker-src": ["'self'", "blob:"],
-    "media-src": ["'self'", "data:", "blob:"],
+    "media-src": ["'self'", "data:", "blob:", ...CSP_SOURCES.media],
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'"],

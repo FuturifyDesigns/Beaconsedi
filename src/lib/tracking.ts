@@ -55,6 +55,7 @@ export function responseStatus(args: {
 }): ResponseStatus {
   const { incidentStatus, unitStatus, hasUnit, distanceKmToScene, accepted } = args;
   if (incidentStatus === "resolved") return "completed";
+  if (incidentStatus === "cancelled") return "cancelled";
   if (incidentStatus === "transporting" || unitStatus === "transporting") return "transporting";
   if (incidentStatus === "on_scene" || unitStatus === "on_scene") return "on_scene";
   if (!hasUnit) return incidentStatus === "active" ? "available" : "dispatched";

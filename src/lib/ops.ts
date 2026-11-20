@@ -140,6 +140,7 @@ export const PRIORITY_HEX: Record<string, string> = {
 };
 
 export const INCIDENT_STATUS: Record<string, Meta> = {
+  cancelled: { label: "Cancelled", dot: "bg-muted-foreground", text: "text-muted-foreground", chip: "bg-muted text-muted-foreground" },
   active: { label: "Awaiting dispatch", dot: "bg-emergency", text: "text-emergency", chip: "bg-emergency/15 text-emergency" },
   acknowledged: { label: "Acknowledged", dot: "bg-warning", text: "text-warning", chip: "bg-warning/15 text-warning" },
   dispatched: { label: "Dispatched", dot: "bg-sky-400", text: "text-sky-300", chip: "bg-sky-400/15 text-sky-300" },

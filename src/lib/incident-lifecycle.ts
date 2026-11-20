@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { estimateEta, distanceKm, logAudit, logEvent, nearestUnit, type Incident, type Unit } from "@/lib/ops";
+import { estimateEta, distanceKm, nearestUnit, type Incident, type Unit } from "@/lib/ops";
 
 /* ------------------------------- state model ------------------------------ */
 
@@ -48,7 +48,7 @@ export function stageIndex(stage: LifecycleStage): number {
 
 export function canRunAction(incident: Pick<Incident, "status" | "priority">, action: LifecycleAction): boolean {
   const stage = stageOf(incident);
-  if (stage === "resolved") return false;
+  if (incident.status === "resolved" || incident.status === "cancelled") return false;
   if (action === "escalate") return incident.priority !== "critical";
   return ALLOWED_TRANSITIONS[stage].includes(ACTION_TARGET[action]);
 }
@@ -77,15 +77,6 @@ type Ctx = {
   note?: string | null;
 };
 
-const EVENT_FOR: Record<LifecycleAction, string> = {
-  acknowledge: "responder_accepted",
-  dispatch: "unit_dispatched",
-  arrive: "arrived_on_scene",
-  transport: "patient_loaded",
-  resolve: "incident_closed",
-  escalate: "escalated",
-};
-
 /**
  * Applies one lifecycle transition: validates it, writes the alert row,
  * keeps the assigned unit in sync, appends a timeline event and an audit entry.
@@ -95,21 +86,7 @@ export async function applyIncidentAction(incident: Incident, action: LifecycleA
     throw new Error(`Cannot ${ACTION_META[action].label.toLowerCase()} an incident that is ${stageOf(incident).replace(/_/g, " ")}`);
   }
 
-  let note: string | null = ctx.note ?? null;
-  const alertPatch: Record<string, unknown> = { responder_id: incident.responder_id ?? ctx.userId };
-
-  if (action === "escalate") {
-    alertPatch['priority'] = "critical";
-    note = note ?? `Escalated by ${ctx.actorName ?? "responder"}`;
-  } else {
-    alertPatch['status'] = ACTION_TARGET[action];
-  }
-
-  if (action === "acknowledge") {
-    alertPatch['responder_id'] = ctx.userId;
-    note = note ?? ctx.actorName ?? null;
-  }
-
+  const note = ctx.note ?? null;
   let unitId = incident.assigned_unit_id;
   let eta = incident.eta_minutes;
 
@@ -145,36 +122,7 @@ export async function applyIncidentAction(incident: Incident, action: LifecycleA
     return;
   }
 
-  if (action === "resolve") {
-    alertPatch['resolved_at'] = new Date().toISOString();
-    alertPatch['eta_minutes'] = null;
-  }
-
-  const { error } = await supabase.from("alerts").update(alertPatch as never).eq("id", incident.id);
+  const { error } = await supabase.rpc("transition_incident" as never, { _alert_id: incident.id, _action: action, _note: note } as never);
   if (error) throw error;
-
-  // Keep the assigned unit's status aligned with the incident stage.
-  const unitPatch: Record<string, unknown> | null =
-    action === "arrive"
-        ? { status: "on_scene", current_alert_id: incident.id, eta_minutes: null }
-        : action === "transport"
-          ? { status: "transporting", current_alert_id: incident.id }
-          : action === "resolve"
-            ? { status: "available", current_alert_id: null, eta_minutes: null }
-            : null;
-
-  if (unitPatch && unitId) {
-    const { error: unitError } = await supabase.from("responder_units").update(unitPatch as never).eq("id", unitId);
-    if (unitError) throw unitError;
-  }
-
-  await logEvent(incident.id, EVENT_FOR[action], note ?? undefined);
-  await logAudit(`incident_${action}`, "alert", incident.id, {
-    from: incident.status,
-    to: action === "escalate" ? incident.status : ACTION_TARGET[action],
-    unit_id: unitId,
-  });
-
-
   return { unitId, eta };
 }

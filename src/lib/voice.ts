@@ -130,11 +130,12 @@ export async function voiceNoteUrl(path: string): Promise<string> {
 }
 
 export async function markListened(messageId: string) {
-  await supabase
+  const { error } = await supabase
     .from("incident_messages")
     .update({ listened_at: new Date().toISOString() } as never)
     .eq("id", messageId)
     .is("listened_at", null);
+  if (error) throw error;
 }
 
 export function durationLabel(seconds: number | null | undefined) {

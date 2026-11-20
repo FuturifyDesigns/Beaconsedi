@@ -79,7 +79,7 @@ function OperationsPage() {
   const active = useMemo(
     () =>
       visible
-        .filter((i) => i.status !== "resolved")
+        .filter((i) => !["resolved", "cancelled"].includes(i.status))
         .sort((a, b) => PRIORITY_ORDER.indexOf(a.priority as Priority) - PRIORITY_ORDER.indexOf(b.priority as Priority)),
     [visible],
   );
@@ -88,9 +88,9 @@ function OperationsPage() {
     const q = query.trim().toLowerCase();
     const base = visible.filter((i) => {
       if (filter === "all") return true;
-      if (filter === "active") return i.status !== "resolved";
-      if (filter === "critical") return i.priority === "critical" && i.status !== "resolved";
-      if (filter === "unassigned") return !i.assigned_unit_id && i.status !== "resolved";
+      if (filter === "active") return !["resolved", "cancelled"].includes(i.status);
+      if (filter === "critical") return i.priority === "critical" && !["resolved", "cancelled"].includes(i.status);
+      if (filter === "unassigned") return !i.assigned_unit_id && !["resolved", "cancelled"].includes(i.status);
       return i.status === filter;
     });
     const searched = q
@@ -272,7 +272,7 @@ function OperationsPage() {
             patientGps: active.some(
               (i) => i.location_updated_at && Date.now() - new Date(i.location_updated_at).getTime() < 120_000,
             ),
-            navigation: active.some((i) => i.assigned_unit_id && i.status !== "resolved"),
+            navigation: active.some((i) => i.assigned_unit_id && !["resolved", "cancelled"].includes(i.status)),
             communications: link === "connected" && !error,
           }}
         />

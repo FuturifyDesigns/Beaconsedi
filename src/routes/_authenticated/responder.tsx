@@ -107,14 +107,14 @@ function ResponderCommandPage() {
     void signOut();
   });
 
-  const active = useMemo(() => incidents.filter((i) => i.status !== "resolved"), [incidents]);
-  const historyIncidents = useMemo(() => incidents.filter((i) => i.status === "resolved"), [incidents]);
+  const active = useMemo(() => incidents.filter((i) => !["resolved", "cancelled"].includes(i.status)), [incidents]);
+  const historyIncidents = useMemo(() => incidents.filter((i) => ["resolved", "cancelled"].includes(i.status)), [incidents]);
   const selected = useMemo(
     () => incidents.find((i) => i.id === selectedId) ?? active[0] ?? null,
     [incidents, selectedId, active],
   );
   const { data: events = [], isLoading: eventsLoading } = useIncidentEvents(selected?.id ?? null, enabled);
-  const canViewPatient = !!selected && selected.status !== "active";
+  const canViewPatient = !!selected && !["active", "resolved", "cancelled"].includes(selected.status) && (isAdmin || selected.responder_id === user?.id);
   const { data: patient, isLoading: patientLoading } = usePatientProfile(canViewPatient ? selected?.patient_id : null);
 
   const unread = notifications.filter((n) => !n.read_at).length;

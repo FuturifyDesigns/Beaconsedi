@@ -46,6 +46,47 @@ function SOSPage() {
   const [holdProgress, setHoldProgress] = useState(0);
   const [sentAt, setSentAt] = useState<number | null>(null);
   const [noAckTimeout, setNoAckTimeout] = useState(false);
+  const [recovering, setRecovering] = useState(true);
+  const [recoveryError, setRecoveryError] = useState(false);
+  const receiptKey = "beacon-active-sos";
+
+  async function recoverAlert() {
+    setRecovering(true);
+    setRecoveryError(false);
+    try {
+      let saved: string | null = null;
+      try { saved = sessionStorage.getItem(receiptKey); } catch { /* Storage is optional. */ }
+      if (!saved) return;
+      let receipt: { alertId: string; patientId: string | null; sentAt: number };
+      try { receipt = JSON.parse(saved); } catch { sessionStorage.removeItem(receiptKey); return; }
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!receipt || typeof receipt !== "object" || !uuid.test(receipt.alertId) || !Number.isFinite(receipt.sentAt) || receipt.sentAt > Date.now() || (receipt.patientId !== null && !uuid.test(receipt.patientId))) {
+        sessionStorage.removeItem(receiptKey); return;
+      }
+      if (receipt.patientId) {
+        const { data, error } = await supabase.auth.getUser();
+        if (error?.name === "AuthSessionMissingError") { sessionStorage.removeItem(receiptKey); return; }
+        if (error) throw error;
+        if (data.user?.id !== receipt.patientId) { sessionStorage.removeItem(receiptKey); return; }
+      }
+      setAlertId(receipt.alertId); setPatientId(receipt.patientId);
+      setSentAt(receipt.sentAt); setStage("sent");
+    } catch { setRecoveryError(true); }
+    finally { setRecovering(false); }
+  }
+
+  useEffect(() => { void recoverAlert(); }, []);
+
+  useEffect(() => {
+    if (status === "resolved" || status === "cancelled") {
+      try { sessionStorage.removeItem(receiptKey); } catch { /* Storage is optional. */ }
+    }
+  }, [status]);
+
+  function newAlert() {
+    setHoldProgress(0); setAlertId(null); setPatientId(null); setCoords(null);
+    setSentAt(null); setMessage(""); setStatus("active"); setStage("idle");
+  }
 
   useEffect(() => {
     if (stage !== "sent" || status === "resolved" || status === "cancelled") return;
@@ -78,6 +119,7 @@ function SOSPage() {
   }, [alertId]);
 
   async function sendAlert() {
+    if (recovering || recoveryError) return;
     try {
       phoneValue(phone, "Callback phone");
       textValue(name, "Your name", 200);
@@ -110,12 +152,15 @@ function SOSPage() {
       setPatientId(patient_id);
       setStatus(data.status);
       setStage("sent");
-      setSentAt(Date.now());
+      const submittedAt = Date.now();
+      setSentAt(submittedAt);
+      try { sessionStorage.setItem(receiptKey, JSON.stringify({ alertId: data.id, patientId: patient_id, sentAt: submittedAt })); } catch { /* Alert delivery must not depend on browser storage. */ }
       buzz([120, 60, 120, 60, 320]);
       toast.success("Alert sent. Waiting for a responder to acknowledge it.");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to send alert";
       toast.error(msg);
+      setHoldProgress(0);
       setStage("idle");
     }
   }
@@ -136,13 +181,13 @@ function SOSPage() {
 
   // Hold-to-send interaction
   useEffect(() => {
-    if (stage !== "idle") return;
+    if (stage !== "idle" || recovering || recoveryError) return;
     if (holdProgress >= 100) sendAlert();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [holdProgress, stage]);
+  }, [holdProgress, stage, recovering, recoveryError]);
 
   function startHold() {
-    if (stage !== "idle") return;
+    if (stage !== "idle" || recovering || recoveryError) return;
     buzz(60);
     const start = Date.now();
     const duration = 900;
@@ -253,8 +298,11 @@ function SOSPage() {
 
   const statusLabels: Record<string, { label: string; color: string }> = {
     active: { label: "Alert received", color: "bg-warning text-warning-foreground" },
-    acknowledged: { label: "Responder assigned", color: "bg-warning text-warning-foreground" },
+    acknowledged: { label: "Alert acknowledged", color: "bg-warning text-warning-foreground" },
     dispatched: { label: "Responder en route", color: "bg-emergency text-emergency-foreground" },
+    on_scene: { label: "Responder on scene", color: "bg-warning text-warning-foreground" },
+    transporting: { label: "Transporting", color: "bg-warning text-warning-foreground" },
+    cancelled: { label: "Cancelled", color: "bg-muted text-muted-foreground" },
     resolved: { label: "Resolved", color: "bg-success text-success-foreground" },
   };
   const st = statusLabels[status] ?? statusLabels.active;
@@ -295,7 +343,7 @@ function SOSPage() {
             <div className="my-10 grid place-items-center">
               <button
                 type="button"
-                disabled={stage !== "idle"}
+                disabled={stage !== "idle" || recovering || recoveryError}
                 onPointerDown={startHold}
                 className="relative grid h-52 w-52 place-items-center rounded-full bg-emergency text-emergency-foreground shadow-[var(--shadow-emergency)] transition disabled:opacity-70"
                 style={{
@@ -312,10 +360,11 @@ function SOSPage() {
             </div>
 
             <p className="text-xs text-muted-foreground">
-              {stage === "idle" && "Hold the button for 1 second"}
+              {recovering ? "Checking for your existing alert…" : recoveryError ? "Could not recover your existing alert. Retry before sending another." : stage === "idle" && "Hold the button for 1 second"}
               {stage === "locating" && "Getting precise location..."}
               {stage === "sending" && "Notifying responders..."}
             </p>
+            {recoveryError && <Button className="mt-3" onClick={() => void recoverAlert()}>Retry alert recovery</Button>}
 
             <div className="mx-auto mt-5 max-w-md sm:mt-10 space-y-3 text-left">
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -503,8 +552,9 @@ function SOSPage() {
             <div className="mt-4"><SoundSettingsCard /></div>
 
             <div className="mt-6 flex items-center justify-center gap-2 rounded-lg border border-border bg-card p-3 text-sm text-muted-foreground">
-              <MapPin className="h-4 w-4" /> Location updates automatically
+              <MapPin className="h-4 w-4" /> {status === "resolved" || status === "cancelled" ? "Location sharing stopped" : "Location updates automatically"}
             </div>
+            {(status === "resolved" || status === "cancelled") && <Button className="mt-4 w-full" onClick={newAlert}>Start new SOS</Button>}
           </div>
         )}
       </main>

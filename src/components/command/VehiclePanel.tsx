@@ -73,7 +73,7 @@ export function VehiclePanel({ vehicle, onStatus }: { vehicle: VehicleRecord | n
             onChange={(e) => onStatus(e.target.value)}
             className="mt-2 min-h-11 w-full rounded-lg border border-border bg-background px-3 text-sm"
           >
-            {Object.entries(VEHICLE_STATUS).map(([key, meta]) => (
+            {Object.entries(VEHICLE_STATUS).filter(([key]) => ["available", "busy", "offline"].includes(key) || key === vehicle.status).map(([key, meta]) => (
               <option key={key} value={key}>{meta.label}</option>
             ))}
           </select>

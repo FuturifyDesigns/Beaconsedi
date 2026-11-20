@@ -35,6 +35,9 @@ export function VoiceNotes({ alertId, senderRole, senderLabel, recipientRole, ti
   const notes = ((messagesQ.data ?? []) as unknown as VoiceMessage[]).filter((m) => m.kind === "voice" && m.media_path);
 
   const [recorder, setRecorder] = useState<Recorder | null>(null);
+  const recorderRef = useRef<Recorder | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; recorderRef.current?.cancel(); }; }, []);
   const [elapsed, setElapsed] = useState(0);
   const [draft, setDraft] = useState<{ blob: Blob; seconds: number; url: string } | null>(null);
   const [sending, setSending] = useState(false);
@@ -55,6 +58,8 @@ export function VoiceNotes({ alertId, senderRole, senderLabel, recipientRole, ti
   async function begin() {
     try {
       const r = await startRecording();
+      if (!mounted.current) { r.cancel(); return; }
+      recorderRef.current = r;
       setElapsed(0);
       setRecorder(r);
     } catch (e) {
@@ -65,9 +70,10 @@ export function VoiceNotes({ alertId, senderRole, senderLabel, recipientRole, ti
   async function stop() {
     if (!recorder) return;
     const r = recorder;
+    recorderRef.current = null;
     setRecorder(null);
     const { blob, seconds } = await r.stop();
-    setDraft({ blob, seconds, url: URL.createObjectURL(blob) });
+    if (mounted.current) setDraft({ blob, seconds, url: URL.createObjectURL(blob) });
   }
 
   function discard() {
@@ -155,6 +161,8 @@ function VoiceRow({ note, onPlayed }: { note: VoiceMessage; onPlayed: () => void
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLAudioElement | null>(null);
+  const urlExpires = useRef(0);
+  const marking = useRef(false);
 
   async function toggle() {
     if (playing) {
@@ -164,18 +172,25 @@ function VoiceRow({ note, onPlayed }: { note: VoiceMessage; onPlayed: () => void
     }
     try {
       setLoading(true);
-      const src = url ?? (await voiceNoteUrl(note.media_path!));
+      const cached = url && Date.now() < urlExpires.current;
+      const src = cached ? url : await voiceNoteUrl(note.media_path!);
+      if (!cached) urlExpires.current = Date.now() + 9 * 60_000;
       setUrl(src);
       setPlaying(true);
-      if (!note.listened_at) {
-        await markListened(note.id);
-        onPlayed();
-      }
+
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Playback failed");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function heard() {
+    if (note.listened_at || marking.current) return;
+    marking.current = true;
+    try { await markListened(note.id); onPlayed(); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "Could not update the playback receipt"); }
+    finally { marking.current = false; }
   }
 
   useEffect(() => {
@@ -206,6 +221,8 @@ function VoiceRow({ note, onPlayed }: { note: VoiceMessage; onPlayed: () => void
       {url && (
         <audio
           ref={ref} src={url} className="mt-2 w-full" controls
+          onPlaying={() => void heard()}
+          onError={() => { setPlaying(false); setUrl(null); urlExpires.current = 0; toast.error("Recording could not play. Try again to refresh the playback link."); }}
           onEnded={() => setPlaying(false)} onPause={() => setPlaying(false)}
         />
       )}

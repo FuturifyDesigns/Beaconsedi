@@ -111,10 +111,18 @@ export function useOpsRealtime(enabled: boolean) {
 
 /** Messages attached to one incident (dispatcher ⇄ responder ⇄ patient). */
 export function useIncidentMessages(alertId: string | null, enabled: boolean) {
+  const client = useQueryClient();
+  useEffect(() => {
+    if (!enabled || !alertId) return;
+    const channel = supabase.channel(`incident-messages-${alertId}-${Math.random().toString(36).slice(2)}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "incident_messages", filter: `alert_id=eq.${alertId}` }, () => client.invalidateQueries({ queryKey: ["ops", "messages", alertId] }))
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [alertId, enabled, client]);
   return useQuery({
     queryKey: ["ops", "messages", alertId],
     enabled: enabled && !!alertId,
-    refetchInterval: 15_000,
+    refetchInterval: 5000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("incident_messages")
