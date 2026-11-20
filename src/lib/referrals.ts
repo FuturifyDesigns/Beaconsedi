@@ -184,34 +184,7 @@ export const NEXT_STATUSES: Partial<Record<ReferralStatus, ReferralStatus[]>> = 
 
 /* --------------------------------- helpers -------------------------------- */
 
-/** Decodes a Google encoded polyline into lat/lng points (client-side). */
-export function decodePolyline(encoded: string): { lat: number; lng: number }[] {
-  const points: { lat: number; lng: number }[] = [];
-  let index = 0;
-  let lat = 0;
-  let lng = 0;
-  while (index < encoded.length) {
-    let shift = 0;
-    let result = 0;
-    let byte: number;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20 && index < encoded.length);
-    lat += result & 1 ? ~(result >> 1) : result >> 1;
-    shift = 0;
-    result = 0;
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20 && index < encoded.length);
-    lng += result & 1 ? ~(result >> 1) : result >> 1;
-    points.push({ lat: lat / 1e5, lng: lng / 1e5 });
-  }
-  return points;
-}
+export { decodePolyline } from "@/lib/polyline";
 
 /** Remaining km from the unit's live position to the destination facility. */
 export function remainingKm(

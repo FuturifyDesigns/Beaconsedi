@@ -1,3 +1,4 @@
+import { useDeviceLocation } from "@/hooks/useDeviceLocation";
 import { AppShell } from "@/components/AppShell";
 import { ShiftPanel } from "@/components/command/ShiftPanel";
 import { ProfilePanel } from "@/components/command/ProfilePanel";
@@ -8,7 +9,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Siren, Radio, Loader2, ShieldAlert, MapPin, Gauge, Ambulance } from "lucide-react";
+import { Siren, Radio, Loader2, ShieldAlert, MapPin, Gauge, Ambulance, LocateFixed } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { GoogleMap, type MapMarker, type MapRoute } from "@/components/GoogleMap";
 import { NavigateButton } from "@/components/NavigateButton";
@@ -88,13 +89,17 @@ function CrewApp() {
     status: vehicle?.status ?? profile?.availability ?? null,
   });
 
-  const here = broadcast.point ? { lat: broadcast.point.lat, lng: broadcast.point.lng } : null;
+  const deviceLocation = useDeviceLocation(isResponder && section === "response");
+  const [locationFocus, setLocationFocus] = useState(0);
+  const localPoint = deviceLocation.point;
+  const here = localPoint ? { lat: localPoint.latitude, lng: localPoint.longitude } : broadcast.point ? { lat: broadcast.point.lat, lng: broadcast.point.lng } : null;
   const scene = job ? { lat: job.latitude, lng: job.longitude } : null;
   const { route } = useLiveRoute(here, scene, 15_000);
   const { label: etaLabel } = useEtaCountdown(route?.durationInTrafficSeconds ?? route?.durationSeconds ?? null);
 
   const markers: MapMarker[] = useMemo(() => {
     const list: MapMarker[] = [];
+    if (here && !(unitId && (onDuty || job))) list.push({ id: "my-location", ...here, title: "Your current location", color: "#2563eb", scale: 9, noCluster: true, accuracyMeters: localPoint?.accuracy });
     if (scene && job) {
       list.push({
         image: "patient", id: "scene", lat: scene.lat, lng: scene.lng, scale: 14, pulse: true,
@@ -106,7 +111,7 @@ function CrewApp() {
       list.push({ id: `q-${i.id}`, lat: i.latitude, lng: i.longitude, scale: 9, color: PRIORITY_HEX[i.priority] ?? PRIORITY_HEX['high'], title: i.incident_code ?? "SOS" });
     }
     return list;
-  }, [scene, job, queue]);
+  }, [scene, job, queue, here?.lat, here?.lng, localPoint?.accuracy, unitId, onDuty]);
 
   const routes: MapRoute[] = route?.polyline ? [{ id: "to-scene", encoded: route.polyline, color: "#38bdf8", weight: 6 }] : [];
 
@@ -205,7 +210,7 @@ function CrewApp() {
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
           <span className={`rounded-full px-2 py-0.5 font-semibold ${gps.chip}`}>
-            <Radio className="mr-1 inline h-3 w-3" aria-hidden="true" />{onDuty || job ? gps.label : "GPS off"}
+            <Radio className="mr-1 inline h-3 w-3" aria-hidden="true" />{onDuty || job ? gps.label : "GPS not shared"}
           </span>
           {broadcast.point?.accuracy != null && <span className="text-muted-foreground">±{Math.round(broadcast.point.accuracy)} m</span>}
           {broadcast.point?.speed != null && <span className="text-muted-foreground">{Math.round(broadcast.point.speed * 3.6)} km/h</span>}
@@ -228,18 +233,22 @@ function CrewApp() {
         {section === "response" && <>
 
         <section aria-label="Route map" className="overflow-hidden rounded-2xl border border-border">
-          <div className="h-[260px] w-full">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-3 py-2">
+            <p role="status" className="text-xs text-muted-foreground">{deviceLocation.error ?? (localPoint ? `Your location · ±${Math.round(localPoint.accuracy)} m` : "Finding your location…")}</p>
+            <button onClick={() => { deviceLocation.retry(); setLocationFocus((value) => value + 1); }} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold"><LocateFixed className="h-4 w-4" />My location</button>
+          </div>
+          <div className="h-[360px] w-full sm:h-[420px]">
             <GoogleMap
               markers={markers}
               routes={routes}
-              vehicles={here ? [{ id: "me", lat: here.lat, lng: here.lng, heading: broadcast.point?.heading ?? null, label: vehicle?.call_sign ?? "Unit", color: "#22c55e" }] : []}
-              center={here ?? scene ?? undefined}
-              zoom={14}
+              vehicles={here && unitId && (onDuty || job) ? [{ id: "me", lat: here.lat, lng: here.lng, heading: broadcast.point?.heading ?? null, label: vehicle?.call_sign ?? "Unit", color: "#22c55e" }] : []}
+              center={here ?? scene ?? { lat: -24.6282, lng: 25.9231 }}
+              focus={here ? { ...here, zoom: 15, nonce: locationFocus } : null}
+              zoom={here || scene ? 15 : 12}
               dark
-              traffic
-              fitToMarkers={!here}
+              fitToMarkers={!here && !!scene}
               className="h-full w-full"
-              fallbackDetails={job ? { lat: job.latitude, lng: job.longitude, address: job.address, incidentId: job.id } : undefined}
+              fallbackDetails={job ? { lat: job.latitude, lng: job.longitude, address: job.address, incidentId: job.id } : localPoint ? { lat: localPoint.latitude, lng: localPoint.longitude, accuracyMeters: localPoint.accuracy, updatedAt: localPoint.at ? new Date(localPoint.at).toISOString() : null } : undefined}
             />
           </div>
           {job && (

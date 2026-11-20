@@ -1,89 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MapFallback, type MapFallbackDetails } from "@/components/MapFallback";
 
-const BROWSER_KEY = (import.meta.env.VITE_GOOGLE_MAPS_BROWSER_KEY ||
-  import.meta.env.VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY) as string | undefined;
-const CHANNEL = import.meta.env.VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_TRACKING_ID as string | undefined;
-
-let loadPromise: Promise<void> | null = null;
-let loaderScript: HTMLScriptElement | null = null;
-let loaderCallback: string | null = null;
-
-function clearPendingLoader(removeScript: boolean) {
-  if (loaderCallback && typeof window !== "undefined") {
-    delete (window as unknown as Record<string, unknown>)[loaderCallback];
-    loaderCallback = null;
-  }
-  if (removeScript && loaderScript) {
-    loaderScript.remove();
-    loaderScript = null;
-  }
-}
-
-/** Drop the cached loader so a failed load can be retried. */
-export function resetGoogleMapsLoader() {
-  const loaded = typeof window !== "undefined" &&
-    typeof (window as unknown as { google?: { maps?: { Map?: unknown } } }).google?.maps?.Map === "function";
-  clearPendingLoader(!loaded);
-  loadPromise = null;
-}
-
-export function loadGoogleMaps(): Promise<void> {
-  if (typeof window === "undefined") return Promise.reject(new Error("SSR"));
-  if (loadPromise) return loadPromise;
-  const w = window as unknown as { google?: { maps?: { Map?: unknown } } };
-  if (typeof w.google?.maps?.Map === "function") return Promise.resolve();
-  if (!BROWSER_KEY) return Promise.reject(new Error("Google Maps key not configured"));
-
-  loadPromise = new Promise((resolve, reject) => {
-    const loadAttempt = (attempt: number) => {
-      const cbName = "__beaconGoogleMapsReady_" + Math.random().toString(36).slice(2);
-      loaderCallback = cbName;
-      const script = document.createElement("script");
-      loaderScript = script;
-      const channel = CHANNEL ? `&channel=${encodeURIComponent(CHANNEL)}` : "";
-      script.id = "beacon-google-maps";
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${BROWSER_KEY}&loading=async&libraries=geometry&callback=${cbName}${channel}`;
-      script.async = true;
-      script.defer = true;
-
-      let settled = false;
-      const timeout = window.setTimeout(() => fail("Google Maps took too long to respond"), 15_000);
-      const cleanupAttempt = (removeScript: boolean) => {
-        window.clearTimeout(timeout);
-        delete (window as unknown as Record<string, unknown>)[cbName];
-        if (loaderCallback === cbName) loaderCallback = null;
-        if (removeScript && loaderScript === script) {
-          script.remove();
-          loaderScript = null;
-        }
-      };
-      const fail = (message: string) => {
-        if (settled) return;
-        settled = true;
-        cleanupAttempt(true);
-        if (attempt < 2 && navigator.onLine) {
-          window.setTimeout(() => loadAttempt(attempt + 1), 750 * 2 ** attempt);
-          return;
-        }
-        loadPromise = null;
-        reject(new Error(navigator.onLine ? message : "No internet connection. Coordinates remain available."));
-      };
-
-      (window as unknown as Record<string, unknown>)[cbName] = () => {
-        if (settled) return;
-        settled = true;
-        cleanupAttempt(false);
-        resolve();
-      };
-      script.onerror = () => fail("Google Maps could not be reached on this network");
-      document.head.appendChild(script);
-    };
-    loadAttempt(0);
-  });
-  return loadPromise;
-}
-
+import { loadGoogleMaps, resetGoogleMapsLoader } from "@/lib/google-maps-loader";
+import { decodePolyline } from "@/lib/polyline";
+export { loadGoogleMaps, resetGoogleMapsLoader } from "@/lib/google-maps-loader";
 
 export type MapMarker = {
   id: string;
@@ -235,7 +155,7 @@ export function GoogleMap({
   dark = false,
   routes = [],
   geofences = [],
-  mapTypeId = "hybrid",
+  mapTypeId = "roadmap",
   cluster = false,
   fallbackDetails,
   vehicles = [],
@@ -257,6 +177,21 @@ export function GoogleMap({
   const [retryKey, setRetryKey] = useState(0);
 
   const retry = useCallback(() => {
+    // Error fallback replaces the map element. Never reuse a map attached to its old node.
+    clusterRef.current?.clearMarkers();
+    clusterRef.current = null;
+    markerRefs.current.forEach((marker) => marker.setMap(null));
+    markerRefs.current = [];
+    overlayRefs.current.forEach((overlay) => overlay.setMap(null));
+    overlayRefs.current = [];
+    vehicleRefs.current.forEach((vehicle) => { if (vehicle.raf !== null) cancelAnimationFrame(vehicle.raf); vehicle.marker.setMap(null); });
+    vehicleRefs.current.clear();
+    trafficRef.current?.setMap(null);
+    trafficRef.current = null;
+    mapRef.current = null;
+    boundsRef.current = null;
+    didFit.current = false;
+    setReady(false);
     resetGoogleMapsLoader();
     setError(null);
     setRetryKey((k) => k + 1);
@@ -282,11 +217,10 @@ export function GoogleMap({
         if (cancelled || !ref.current) return;
         const g = (window as unknown as { google: GMapsGlobal }).google;
         setError(null);
-        setReady(true);
 
         if (!mapRef.current) {
           mapRef.current = new g.maps.Map(ref.current, {
-            center: center ?? { lat: markers[0]?.lat ?? 0, lng: markers[0]?.lng ?? 0 },
+            center: center ?? { lat: markers[0]?.lat ?? -24.6282, lng: markers[0]?.lng ?? 25.9231 },
             zoom,
             disableDefaultUI: true,
             zoomControl: true,
@@ -304,6 +238,7 @@ export function GoogleMap({
           });
         }
         const map = mapRef.current;
+        setReady(true);
 
         if (traffic) {
           if (!trafficRef.current) trafficRef.current = new g.maps.TrafficLayer();
@@ -367,10 +302,11 @@ export function GoogleMap({
           bounds.extend({ lat: m.lat, lng: m.lng });
         });
 
-        if (cluster && clusterable.length) {
+        if (cluster && clusterable.length > 1) {
           try {
             if (!clusterRef.current) {
               const { MarkerClusterer } = await import("@googlemaps/markerclusterer");
+              if (cancelled) return;
               clusterable.forEach((m) => m.setMap(null));
               clusterRef.current = new MarkerClusterer({ map: map as never, markers: clusterable as never });
             } else {
@@ -402,9 +338,7 @@ export function GoogleMap({
         // routes
         routes.forEach((r) => {
           let path: LatLngLiteral[] = r.path ?? [];
-          if (!path.length && r.encoded && g.maps.geometry?.encoding) {
-            path = g.maps.geometry.encoding.decodePath(r.encoded).map((p) => ({ lat: p.lat(), lng: p.lng() }));
-          }
+          if (!path.length && r.encoded) path = decodePolyline(r.encoded);
           if (path.length < 2) return;
           overlayRefs.current.push(
             new g.maps.Polyline({
@@ -435,6 +369,8 @@ export function GoogleMap({
         }
       })
       .catch((err) => {
+        if (cancelled) return;
+        setReady(false);
         console.error("[beacon:maps] load failed", err);
         setError(err instanceof Error ? err.message : "Map failed to load");
       });
@@ -574,7 +510,8 @@ export function GoogleMap({
   }
 
   return (
-    <div className={className ?? "h-full w-full"}>
+    <div className={`relative ${className ?? "h-full w-full"}`} aria-busy={!ready}>
+      {!ready && <div role="status" className="pointer-events-none absolute inset-0 z-10 grid place-items-center rounded-xl bg-muted/90 text-sm text-muted-foreground">Loading map…</div>}
       <div ref={ref} className="h-full w-full rounded-xl bg-muted" />
     </div>
   );

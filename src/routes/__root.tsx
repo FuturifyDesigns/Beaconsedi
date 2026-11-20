@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
   type ErrorComponentProps,
@@ -40,6 +41,12 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: ErrorComponentProps) {
   console.error(error);
   const router = useRouter();
+  const path = useRouterState({ select: (state) => state.location.pathname });
+  useEffect(() => {
+    if (!/^\/(crew|responder|operations|sos|referrals|care)(\/|$)/.test(path)) return;
+    // Fetch the shared SDK while authentication and dashboard data are loading.
+    void import("@/lib/google-maps-loader").then(({ loadGoogleMaps }) => loadGoogleMaps()).catch(() => {});
+  }, [path]);
   useEffect(() => {
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
   }, [error]);
@@ -89,6 +96,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     links: [
       { rel: "stylesheet", href: appCss },
+      { rel: "preconnect", href: "https://maps.googleapis.com" },
+      { rel: "preconnect", href: "https://maps.gstatic.com", crossOrigin: "anonymous" },
       { rel: "icon", href: `${import.meta.env.BASE_URL}favicon.ico`, type: "image/x-icon" },
       { rel: "manifest", href: `${import.meta.env.BASE_URL}manifest.webmanifest` },
       { rel: "apple-touch-icon", href: `${import.meta.env.BASE_URL}apple-touch-icon.png` },
@@ -115,6 +124,12 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const router = useRouter();
+  const path = useRouterState({ select: (state) => state.location.pathname });
+  useEffect(() => {
+    if (!/^\/(crew|responder|operations|sos|referrals|care)(\/|$)/.test(path)) return;
+    // Fetch the shared SDK while authentication and dashboard data are loading.
+    void import("@/lib/google-maps-loader").then(({ loadGoogleMaps }) => loadGoogleMaps()).catch(() => {});
+  }, [path]);
 
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
