@@ -1,4 +1,5 @@
 /** Server-only Google Maps Platform gateway helpers. */
+import { coalesceMapRequest } from "@/lib/map-request-control";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/google_maps";
 
@@ -21,6 +22,13 @@ function explain403(body: string): string {
 }
 
 export async function gmaps<T>(
+  path: string,
+  init: { method?: "GET" | "POST"; body?: unknown; headers?: Record<string, string> } = {},
+): Promise<T> {
+  return coalesceMapRequest(JSON.stringify([path, init]), () => requestGoogleMaps<T>(path, init));
+}
+
+async function requestGoogleMaps<T>(
   path: string,
   init: { method?: "GET" | "POST"; body?: unknown; headers?: Record<string, string> } = {},
 ): Promise<T> {

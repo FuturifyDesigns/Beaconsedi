@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { computeRoute, nearbyEmergencyPlaces, reverseGeocode, travelMatrix, type PlaceResult, type RouteResult } from "@/lib/maps.functions";
 import { watchSmoothed, gpsQuality, type Coords, type GpsQuality } from "@/lib/geolocation";
+import { distanceKm } from "@/lib/ops";
+import { createLatestRequestLoop } from "@/lib/map-request-control";
 
 type Point = { lat: number; lng: number } | null;
 
@@ -30,57 +32,72 @@ export function useLiveLocation(enabled = true) {
 }
 
 /** Traffic-aware route that recalculates on an interval and when endpoints move. */
-export function useLiveRoute(origin: Point, destination: Point, intervalMs = 20_000) {
+export function useLiveRoute(origin: Point, destination: Point, intervalMs = 20_000, identity: string | null = "route") {
   const [route, setRoute] = useState<RouteResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const key = origin && destination ? `${origin.lat.toFixed(4)},${origin.lng.toFixed(4)}|${destination.lat.toFixed(4)},${destination.lng.toFixed(4)}` : null;
-  const lastKey = useRef<string | null>(null);
+  const latest = useRef({ origin, destination });
+  latest.current = { origin, destination };
+  const enabled = !!origin && !!destination;
 
   useEffect(() => {
-    if (!origin || !destination) {
-      setRoute(null);
-      return;
-    }
-    let cancelled = false;
-    const fetchRoute = async () => {
-      setLoading(true);
-      try {
-        const r = await computeRoute({ data: { origin, destination, emergency: true, alternatives: false } });
-        if (!cancelled) {
-          setRoute(r);
-          setError(null);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setRoute(null);
-          setError(e instanceof Error ? e.message : "Routing failed");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    if (lastKey.current !== key) {
-      lastKey.current = key;
-      void fetchRoute();
-    }
-    const id = window.setInterval(fetchRoute, intervalMs);
+    setRoute(null); setLoading(false); setError(null);
+    if (!enabled) return;
+    const loop = createLatestRequestLoop({
+      latest: () => latest.current.origin && latest.current.destination ? { origin: latest.current.origin, destination: latest.current.destination } : null,
+      request: ({ origin, destination }) => computeRoute({ data: { origin, destination, emergency: true, alternatives: false } }),
+      onValue: value => { setRoute(value); setError(null); },
+      onError: e => { setRoute(null); setError(e instanceof Error ? e.message : "Routing failed"); },
+      onLoading: setLoading, intervalMs,
+      available: () => navigator.onLine && document.visibilityState !== "hidden",
+      shouldRefresh: (last, next, elapsed) => elapsed >= 60_000 || distanceKm(last.origin, next.origin) >= .015 || distanceKm(last.destination, next.destination) >= .015,
+    });
+    const tick = () => { void loop.tick(); };
+    tick();
+    const id = window.setInterval(tick, intervalMs);
+    document.addEventListener("visibilitychange", tick);
+    window.addEventListener("online", tick);
     return () => {
-      cancelled = true;
+      loop.stop();
       window.clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener("online", tick);
     };
-  }, [key, intervalMs]);
+  }, [enabled, identity, intervalMs]);
 
   return { route, loading, error };
 }
 
+/** Sample billable address/place lookups, independently of live GPS rendering. */
+function useLookupPoint(point: Point, meters: number, intervalMs: number): Point {
+  const latest = useRef(point); latest.current = point;
+  const [sample, setSample] = useState<Point>(null);
+  const enabled = !!point;
+  useEffect(() => {
+    if (!enabled) { setSample(null); return; }
+    let previous: Point = null;
+    const update = () => {
+      const next = latest.current;
+      if (!next || !navigator.onLine || document.visibilityState === "hidden") return;
+      if (!previous || distanceKm(previous, next) * 1000 >= meters) { previous = next; setSample(next); }
+    };
+    update();
+    const timer = window.setInterval(update, intervalMs);
+    document.addEventListener("visibilitychange", update);
+    window.addEventListener("online", update);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", update); window.removeEventListener("online", update); };
+  }, [enabled, meters, intervalMs]);
+  return sample;
+}
+
 /** Reverse-geocoded address + nearest road for a point. */
 export function useReverseGeocode(point: Point) {
+  point = useLookupPoint(point, 30, 10_000);
   const [data, setData] = useState<{ address: string | null; nearestRoad: string | null; alternatives: string[] } | null>(null);
   const key = point ? `${point.lat.toFixed(4)},${point.lng.toFixed(4)}` : null;
 
   useEffect(() => {
-    if (!point) return;
+    if (!point) { setData(null); return; }
     let cancelled = false;
     reverseGeocode({ data: point })
       .then((r) => !cancelled && setData(r))
@@ -95,12 +112,13 @@ export function useReverseGeocode(point: Point) {
 
 /** Nearby hospitals / police / fire stations / landmarks around a point. */
 export function useNearbyFacilities(point: Point, kinds: ("hospital" | "police" | "fire_station" | "landmark")[] = ["hospital", "police", "fire_station", "landmark"]) {
+  point = useLookupPoint(point, 500, 30_000);
   const [places, setPlaces] = useState<PlaceResult[]>([]);
   const [loading, setLoading] = useState(false);
   const key = point ? `${point.lat.toFixed(3)},${point.lng.toFixed(3)}|${kinds.join(",")}` : null;
 
   useEffect(() => {
-    if (!point) return;
+    if (!point) { setPlaces([]); return; }
     let cancelled = false;
     setLoading(true);
     nearbyEmergencyPlaces({ data: { lat: point.lat, lng: point.lng, radiusMeters: 8000, kinds } })

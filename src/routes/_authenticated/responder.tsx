@@ -1,4 +1,5 @@
 import { useStaffShiftControls, useStaffProfileEditor } from "@/hooks/useStaffWorkflows";
+import { patientMapLabel, vehicleMapLabel } from "@/lib/map-labels";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
@@ -149,6 +150,7 @@ function ResponderCommandPage() {
       lat: i.latitude,
       lng: i.longitude,
       title: `${i.incident_code ?? "SOS"} — ${i.patient_name ?? "Anonymous"}`,
+      label: patientMapLabel(i, units),
       color: PRIORITY_HEX[i.priority] ?? PRIORITY_HEX.high,
       emphasis: i.id === selected?.id,
       scale: i.id === selected?.id ? 14 : 10,
@@ -267,7 +269,7 @@ function ResponderCommandPage() {
               lat: unit.latitude!,
               lng: unit.longitude!,
               heading: unit.heading,
-              label: unit.call_sign,
+              label: vehicleMapLabel(unit, active),
               stale: ["stale", "lost"].includes(gpsState(unit.last_location_update)),
             }))}
           center={ownPos ?? (selected ? { lat: selected.latitude, lng: selected.longitude } : undefined)}

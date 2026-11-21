@@ -17,6 +17,7 @@ import { usePatientResponseView, useGpsState } from "@/hooks/useTracking";
 import { RESPONSE_STATUS_META, GPS_STATE_META, responseStatus } from "@/lib/tracking";
 import { distanceKm } from "@/lib/ops";
 import { Button } from "@/components/ui/button";
+import { shouldSharePatientFix } from "@/lib/location-sharing";
 
 export const Route = createFileRoute("/sos")({
   head: () => ({
@@ -90,14 +91,20 @@ function SOSPage() {
 
   useEffect(() => {
     if (stage !== "sent" || status === "resolved" || status === "cancelled") return;
+    let lastShared: (Coords & { at: number }) | null = null;
+    let inFlight = false;
     const stop = watchSmoothed(
       async (c) => {
         setCoords(c);
-        if (alertId) {
+        const next = { ...c, at: Date.now() };
+        if (alertId && !inFlight && shouldSharePatientFix(lastShared, next)) {
+          inFlight = true;
           const { error } = await supabase.rpc("update_sos_location", {
             _alert_id: alertId, _latitude: c.latitude, _longitude: c.longitude,
             _accuracy: c.accuracy, _heading: c.heading ?? null, _speed: c.speed ?? null,
           });
+          inFlight = false;
+          if (!error) lastShared = next;
           if (error) toast.error("Live location update failed. Check your connection.");
         }
       },
@@ -228,7 +235,7 @@ function SOSPage() {
     distanceKmToScene: distanceToScene,
   });
   const tracking = !!unitPoint && unitGps !== "lost" && !["on_scene", "patient_contact", "completed", "cancelled"].includes(responseStage);
-  const { route: responderRoute } = useLiveRoute(tracking ? { lat: unitPoint!.lat, lng: unitPoint!.lng } : null, tracking ? point : null, 15_000);
+  const { route: responderRoute } = useLiveRoute(tracking ? { lat: unitPoint!.lat, lng: unitPoint!.lng } : null, tracking ? point : null, 15_000, alertId);
   const { remaining: etaSeconds } = useEtaCountdown(
     responderRoute ? (responderRoute.durationInTrafficSeconds ?? responderRoute.durationSeconds) : null,
   );
@@ -255,7 +262,9 @@ function SOSPage() {
     if (!alertId || !geo?.address || status === "resolved" || status === "cancelled") return;
     if (!coords) return;
     void supabase.rpc("update_sos_location", { _alert_id: alertId, _latitude: coords.latitude, _longitude: coords.longitude, _accuracy: coords.accuracy, _address: geo.address });
-  }, [alertId, geo?.address, coords?.latitude, coords?.longitude, status]);
+    // Coordinates continue through the GPS publisher above; this write is only
+    // for a changed address, rather than a second write for every GPS sample.
+  }, [alertId, geo?.address, status]);
 
   const facilityColor: Record<string, string> = {
     hospital: "#e2e8f0",
@@ -279,6 +288,7 @@ function SOSPage() {
           lat: coords.latitude,
           lng: coords.longitude,
           title: "You",
+          label: name.trim() || "Your location",
           emphasis: true,
           pulse: true,
           noCluster: true,

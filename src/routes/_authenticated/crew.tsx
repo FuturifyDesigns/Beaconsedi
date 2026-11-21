@@ -1,4 +1,5 @@
 import { useDeviceLocation } from "@/hooks/useDeviceLocation";
+import { patientMapLabel } from "@/lib/map-labels";
 import { AppShell } from "@/components/AppShell";
 import { ShiftPanel } from "@/components/command/ShiftPanel";
 import { ProfilePanel } from "@/components/command/ProfilePanel";
@@ -94,7 +95,7 @@ function CrewApp() {
   const localPoint = deviceLocation.point;
   const here = localPoint ? { lat: localPoint.latitude, lng: localPoint.longitude } : broadcast.point ? { lat: broadcast.point.lat, lng: broadcast.point.lng } : null;
   const scene = job ? { lat: job.latitude, lng: job.longitude } : null;
-  const { route } = useLiveRoute(here, scene, 15_000);
+  const { route } = useLiveRoute(here, scene, 15_000, job?.id ?? null);
   const { label: etaLabel } = useEtaCountdown(route?.durationInTrafficSeconds ?? route?.durationSeconds ?? null);
 
   const markers: MapMarker[] = useMemo(() => {
@@ -105,13 +106,14 @@ function CrewApp() {
         image: "patient", id: "scene", lat: scene.lat, lng: scene.lng, scale: 14, pulse: true,
         color: PRIORITY_HEX[job.priority] ?? PRIORITY_HEX['high'],
         title: `${job.incident_code ?? "SOS"} — ${job.patient_name ?? "Anonymous"}`,
+        label: patientMapLabel(job, units),
       });
     }
     for (const i of queue) {
       list.push({ id: `q-${i.id}`, lat: i.latitude, lng: i.longitude, scale: 9, color: PRIORITY_HEX[i.priority] ?? PRIORITY_HEX['high'], title: i.incident_code ?? "SOS" });
     }
     return list;
-  }, [scene, job, queue, here?.lat, here?.lng, localPoint?.accuracy, unitId, onDuty]);
+  }, [scene, job, queue, here?.lat, here?.lng, localPoint?.accuracy, unitId, onDuty, units]);
 
   const routes: MapRoute[] = route?.polyline ? [{ id: "to-scene", encoded: route.polyline, color: "#38bdf8", weight: 6 }] : [];
 

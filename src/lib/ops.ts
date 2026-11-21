@@ -75,6 +75,7 @@ export type AuditEntry = {
 };
 
 export type Unit = {
+  user_id?: string | null;
   id: string;
   name: string;
   kind: string;

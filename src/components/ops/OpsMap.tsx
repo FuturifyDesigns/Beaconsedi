@@ -6,6 +6,7 @@ import { useLiveRoute } from "@/hooks/useMaps";
 import { useUnitTrack } from "@/hooks/useTracking";
 import { GPS_STATE_META, gpsState } from "@/lib/tracking";
 import { RoutePanel } from "@/components/ops/RoutePanel";
+import { patientMapLabel, vehicleMapLabel } from "@/lib/map-labels";
 
 
 type Props = {
@@ -76,7 +77,7 @@ export function OpsMap({
 
   const origin = unitPos;
   const destination = selected ? { lat: selected.latitude, lng: selected.longitude } : null;
-  const { route, loading: routeLoading } = useLiveRoute(origin, destination, 10_000);
+  const { route, loading: routeLoading } = useLiveRoute(origin, destination, 10_000, selected?.id ?? null);
 
   const fix = gpsState(livePoint?.at ?? assigned?.last_location_update ?? null);
   const kmToScene = unitPos && destination ? distanceKm(unitPos, destination) : null;
@@ -89,12 +90,13 @@ export function OpsMap({
       lat: i.latitude,
       lng: i.longitude,
       title: `${i.incident_code ?? "Incident"} — ${i.patient_name ?? "Anonymous"}`,
+      label: patientMapLabel(i, units),
       color: PRIORITY_HEX[i.priority] ?? PRIORITY_HEX.high,
       emphasis: i.id === selectedId,
       pulse: i.status === "active",
       accuracyMeters: i.id === selectedId ? i.accuracy ?? undefined : undefined,
       scale: i.id === selectedId ? 14 : 10,
-      noCluster: i.priority === "critical",
+      noCluster: i.priority === "critical" || !!i.assigned_unit_id,
       onClick: () => onSelect(i.id),
     }));
 
@@ -109,7 +111,7 @@ export function OpsMap({
     }));
 
     return [...hospitalMarkers, ...incidentMarkers];
-  }, [incidents, hospitals, selectedId, onSelect]);
+  }, [incidents, hospitals, selectedId, onSelect, units]);
 
   // Every role-assigned vehicle with a real GPS fix, streamed live from the database.
   const vehicles: LiveVehicle[] = useMemo(() => {
@@ -123,7 +125,7 @@ export function OpsMap({
           lat: u.latitude,
           lng: u.longitude,
           heading: u.heading ?? 0,
-          label: `${u.call_sign} · ${u.status.replace("_", " ")}`,
+          label: vehicleMapLabel(u, incidents),
           color: UNIT_STATUS_HEX[u.status] ?? UNIT_KIND[u.kind]?.hex ?? "#64748b",
           stale: g === "stale" || g === "lost",
           onClick: u.current_alert_id ? () => onSelect(u.current_alert_id!) : undefined,
@@ -136,14 +138,14 @@ export function OpsMap({
         lat: unitPos.lat,
         lng: unitPos.lng,
         heading: livePoint?.heading ?? assigned.heading ?? 0,
-        label: assigned.call_sign,
+        label: vehicleMapLabel(assigned, incidents),
         color: UNIT_STATUS_HEX[assigned.status] ?? "#22d3ee",
         stale: fix === "stale" || fix === "lost",
       });
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [units, showUnits, onSelect, assigned?.id, assigned?.call_sign, assigned?.status, unitPos?.lat, unitPos?.lng, livePoint?.heading, fix]);
+  }, [units, incidents, showUnits, onSelect, assigned?.id, assigned?.call_sign, assigned?.status, unitPos?.lat, unitPos?.lng, livePoint?.heading, fix]);
 
   const routes: MapRoute[] = [
     ...(route?.polyline ? [{ id: "active-route", encoded: route.polyline, color: "#38bdf8", weight: 6 }] : []),
@@ -179,6 +181,7 @@ export function OpsMap({
       <div className={expanded ? "order-2 min-h-[360px] flex-1" : "order-2 h-[46vh] min-h-[360px] shrink-0"}>
       <GoogleMap
         markers={markers}
+        declutterLabels
         vehicles={vehicles}
         followVehicleId={follow && assigned ? assigned.id : null}
         focus={focus}

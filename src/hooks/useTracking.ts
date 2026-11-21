@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { watchSmoothed, type Coords, type GpsQuality } from "@/lib/geolocation";
 import { distanceKm } from "@/lib/ops";
+import { mergeLiveRows, updateLiveList } from "@/lib/live-query";
+import { useLiveReconcile } from "@/hooks/useLiveReconcile";
 import {
   bearing, gpsState, publishPing, shouldPublish,
   type GpsState, type ResponderPing, type TrackPoint,
@@ -111,11 +113,12 @@ export function useResponderBroadcast({ active, responderId, unitId, incidentId,
 /** Latest GPS pings for a unit, streamed in real time. */
 export function useUnitTrack(unitId: string | null | undefined, enabled: boolean) {
   const queryClient = useQueryClient();
+  const interval = useLiveReconcile(`track-${unitId}`, 10_000);
 
   const q = useQuery({
     queryKey: ["ops", "track", unitId],
     enabled: enabled && !!unitId,
-    refetchInterval: 10_000,
+    refetchInterval: interval,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("responder_locations")
@@ -135,10 +138,12 @@ export function useUnitTrack(unitId: string | null | undefined, enabled: boolean
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "responder_locations", filter: `unit_id=eq.${unitId}` },
-        () => queryClient.invalidateQueries({ queryKey: ["ops", "track", unitId] }),
+        change => updateLiveList<ResponderPing>(queryClient, ["ops", "track", unitId], rows => mergeLiveRows(rows, change,
+          () => true, (a, b) => b.recorded_at.localeCompare(a.recorded_at), 40)),
       )
-      .subscribe();
+      .subscribe(status => queryClient.setQueryData(["live-status", `track-${unitId}`], status === "SUBSCRIBED"));
     return () => {
+      queryClient.setQueryData(["live-status", `track-${unitId}`], false);
       supabase.removeChannel(ch);
     };
   }, [enabled, unitId, queryClient]);

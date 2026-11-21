@@ -2,16 +2,19 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
+import { retainSubscription } from "@/lib/live-query";
 
 export function useRoles() {
   const { user } = useRouteContext({ from: "/_authenticated" });
   const client = useQueryClient();
   useEffect(() => {
+    return retainSubscription(client, `roles-${user.id}`, () => {
     const channel = supabase.channel(`own-roles-${user.id}-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "user_roles", filter: `user_id=eq.${user.id}` }, () => {
         void client.invalidateQueries({ queryKey: ["roles", user.id] });
       }).subscribe();
     return () => { void supabase.removeChannel(channel); };
+    });
   }, [user.id, client]);
   const query = useQuery({
     queryKey: ["roles", user.id],

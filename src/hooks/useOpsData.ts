@@ -5,12 +5,15 @@ import { supabase } from "@/integrations/supabase/client";
 import type { AuditEntry, Hospital, Incident, IncidentEvent, IncidentMessage, Unit } from "@/lib/ops";
 import { playAlertTone } from "@/lib/responder";
 import { buzz } from "@/lib/haptics";
+import { applyIncidentChange, applyUnitChange, mergeLiveRows, retainSubscription, updateLiveList } from "@/lib/live-query";
+import { useLiveReconcile } from "@/hooks/useLiveReconcile";
 
 export function useIncidents(enabled: boolean) {
+  const interval = useLiveReconcile("ops", 5000);
   return useQuery({
     queryKey: ["ops", "incidents"],
     enabled,
-    refetchInterval: 5_000,
+    refetchInterval: interval,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("alerts")
@@ -25,10 +28,11 @@ export function useIncidents(enabled: boolean) {
 }
 
 export function useUnits(enabled: boolean) {
+  const interval = useLiveReconcile("ops", 10_000);
   return useQuery({
     queryKey: ["ops", "units"],
     enabled,
-    refetchInterval: 10_000,
+    refetchInterval: interval,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("responder_units")
@@ -82,7 +86,7 @@ export function useOpsRealtime(enabled: boolean) {
     const channel = supabase
       .channel("ops-console")
       .on("postgres_changes", { event: "*", schema: "public", table: "alerts" }, (payload) => {
-        invalidate("incidents");
+        applyIncidentChange(queryClient, payload);
         if (payload.eventType === "INSERT") {
           const row = payload.new as Partial<Incident>;
           playAlertTone();
@@ -92,18 +96,15 @@ export function useOpsRealtime(enabled: boolean) {
           buzz([200, 100, 200]);
         }
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "responder_units" }, () => invalidate("units"))
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "responder_locations" }, () => invalidate("units"))
+      .on("postgres_changes", { event: "*", schema: "public", table: "responder_units" }, payload => applyUnitChange(queryClient, payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "hospitals" }, () => invalidate("hospitals"))
       .on("postgres_changes", { event: "*", schema: "public", table: "incident_events" }, () =>
         queryClient.invalidateQueries({ queryKey: ["ops", "events"] }),
       )
-      .on("postgres_changes", { event: "*", schema: "public", table: "incident_messages" }, () =>
-        queryClient.invalidateQueries({ queryKey: ["ops", "messages"] }),
-      )
-      .subscribe();
+      .subscribe(status => queryClient.setQueryData(["live-status", "ops"], status === "SUBSCRIBED"));
 
     return () => {
+      queryClient.setQueryData(["live-status", "ops"], false);
       supabase.removeChannel(channel);
     };
   }, [enabled, queryClient]);
@@ -112,17 +113,22 @@ export function useOpsRealtime(enabled: boolean) {
 /** Messages attached to one incident (dispatcher ⇄ responder ⇄ patient). */
 export function useIncidentMessages(alertId: string | null, enabled: boolean) {
   const client = useQueryClient();
+  const interval = useLiveReconcile(`messages-${alertId}`, 5000);
   useEffect(() => {
     if (!enabled || !alertId) return;
-    const channel = supabase.channel(`incident-messages-${alertId}-${Math.random().toString(36).slice(2)}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "incident_messages", filter: `alert_id=eq.${alertId}` }, () => client.invalidateQueries({ queryKey: ["ops", "messages", alertId] }))
-      .subscribe();
-    return () => { void supabase.removeChannel(channel); };
+    return retainSubscription(client, `messages-${alertId}`, () => {
+      const channel = supabase.channel(`incident-messages-${alertId}-${Math.random().toString(36).slice(2)}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "incident_messages", filter: `alert_id=eq.${alertId}` }, change => {
+          updateLiveList<IncidentMessage>(client, ["ops", "messages", alertId], rows => mergeLiveRows(rows, change, () => true, (a, b) => a.created_at.localeCompare(b.created_at), 200));
+        })
+        .subscribe(status => client.setQueryData(["live-status", `messages-${alertId}`], status === "SUBSCRIBED"));
+      return () => { client.setQueryData(["live-status", `messages-${alertId}`], false); void supabase.removeChannel(channel); };
+    });
   }, [alertId, enabled, client]);
   return useQuery({
     queryKey: ["ops", "messages", alertId],
     enabled: enabled && !!alertId,
-    refetchInterval: 5000,
+    refetchInterval: interval,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("incident_messages")

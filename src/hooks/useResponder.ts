@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Notification, PatientProfile, ResponderProfile, Shift, ShiftEvent } from "@/lib/responder";
 import { playAlertTone } from "@/lib/responder";
 import type { Unit } from "@/lib/ops";
+import { applyIncidentChange, applyUnitChange } from "@/lib/live-query";
 
 export function useCurrentUser() {
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
@@ -158,7 +159,7 @@ export function useResponderRealtime(enabled: boolean, userId: string | undefine
     const channel = supabase
       .channel("responder-command")
       .on("postgres_changes", { event: "*", schema: "public", table: "alerts" }, (payload) => {
-        queryClient.invalidateQueries({ queryKey: ["ops", "incidents"] });
+        applyIncidentChange(queryClient, payload);
         if (payload.eventType === "INSERT") {
           const row = payload.new as { priority?: string; message?: string; patient_name?: string | null };
           playAlertTone();
@@ -169,14 +170,11 @@ export function useResponderRealtime(enabled: boolean, userId: string | undefine
           });
         }
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "responder_units" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["ops", "units"] });
-        queryClient.invalidateQueries({ queryKey: ["responder", "unit"] });
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "responder_units" }, payload => applyUnitChange(queryClient, payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "incident_events" }, () => {
         queryClient.invalidateQueries({ queryKey: ["ops", "events"] });
       })
-      .subscribe();
+      .subscribe(status => queryClient.setQueryData(["live-status", "ops"], status === "SUBSCRIBED"));
 
     const staffChannel = supabase.channel(`staff-workflows-${userId ?? "staff"}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "shifts" }, () => {
@@ -206,6 +204,7 @@ export function useResponderRealtime(enabled: boolean, userId: string | undefine
     }
 
     return () => {
+      queryClient.setQueryData(["live-status", "ops"], false);
       supabase.removeChannel(channel);
       supabase.removeChannel(staffChannel);
       if (notifChannel) supabase.removeChannel(notifChannel);

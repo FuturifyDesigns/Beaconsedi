@@ -143,3 +143,17 @@
   input, textarea, select { min-width: 0; }
   main { overflow-wrap: anywhere; }
 }
+
+/* Labels are map overlays only; they do not create extra Maps API requests. */
+.gm-patient-label, .gm-vehicle-label {
+  background: rgba(11, 18, 32, .94);
+  border: 1px solid rgba(255, 255, 255, .3);
+  border-radius: 6px;
+  padding: 4px 7px;
+  line-height: 14px;
+  white-space: pre-line !important;
+  max-width: 240px;
+  text-align: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .4);
+}
+.gm-patient-label { border-color: rgba(255, 66, 83, .8); }

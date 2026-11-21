@@ -3,6 +3,7 @@ import { MapFallback, type MapFallbackDetails } from "@/components/MapFallback";
 
 import { loadGoogleMaps, resetGoogleMapsLoader } from "@/lib/google-maps-loader";
 import { decodePolyline } from "@/lib/polyline";
+import { arrangeMapLabels } from "@/lib/map-label-layout";
 export { loadGoogleMaps, resetGoogleMapsLoader } from "@/lib/google-maps-loader";
 
 export type MapMarker = {
@@ -10,6 +11,8 @@ export type MapMarker = {
   lat: number;
   lng: number;
   title?: string;
+  /** A readable overhead patient/assignment label, separate from the tooltip. */
+  label?: string;
   emphasis?: boolean;
   /** CSS color for the marker dot. Defaults to the emergency red. */
   color?: string;
@@ -86,6 +89,7 @@ type Props = {
   focus?: { lat: number; lng: number; zoom?: number; nonce: number } | null;
   /** Fit everything currently drawn whenever this value changes. */
   fitNonce?: number;
+  declutterLabels?: boolean;
 };
 
 
@@ -98,6 +102,7 @@ type GMapsGlobal = {
   maps: {
     Size: new (width: number, height: number) => unknown;
     Point: new (x: number, y: number) => unknown;
+    LatLng: new (lat: number, lng: number) => unknown;
     Map: new (el: Element, opts: Record<string, unknown>) => GMap;
     Marker: new (opts: Record<string, unknown>) => GMarker;
     Circle: new (opts: Record<string, unknown>) => GOverlay;
@@ -110,6 +115,11 @@ type GMapsGlobal = {
   };
 };
 type GMap = {
+  getProjection: () => { fromLatLngToPoint: (p: unknown) => { x: number; y: number }; fromPointToLatLng: (p: unknown) => unknown } | undefined;
+  getCenter: () => unknown;
+  getZoom: () => number;
+  getDiv: () => HTMLElement;
+  addListener: (event: string, cb: () => void) => { remove: () => void };
   setCenter: (l: LatLngLiteral) => void;
   panTo: (l: LatLngLiteral) => void;
   setZoom: (n: number) => void;
@@ -117,11 +127,15 @@ type GMap = {
   setOptions: (o: Record<string, unknown>) => void;
 };
 type GMarker = {
+  getMap: () => GMap | null;
   setMap: (m: GMap | null) => void;
   addListener: (event: string, cb: () => void) => void;
   setPosition: (l: LatLngLiteral) => void;
   setIcon: (i: unknown) => void;
   setTitle: (t: string) => void;
+  setLabel: (label: Record<string, unknown> | null) => void;
+  getPosition: () => { lat: () => number; lng: () => number };
+  getIcon: () => Record<string, unknown>;
   setOpacity: (opacity: number) => void;
 };
 type GOverlay = { setMap: (m: GMap | null) => void };
@@ -162,6 +176,7 @@ export function GoogleMap({
   followVehicleId = null,
   focus = null,
   fitNonce,
+  declutterLabels = false,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const mapRef = useRef<GMap | null>(null);
@@ -172,9 +187,44 @@ export function GoogleMap({
   const boundsRef = useRef<GBounds | null>(null);
   const vehicleRefs = useRef<Map<string, { marker: GMarker; lat: number; lng: number; heading: number; raf: number | null }>>(new Map());
   const didFit = useRef(false);
+  const labelEntries = useRef(new Map<string, { marker: GMarker; text: string; icon: Record<string, unknown>; anchorX: number; anchorY: number; priority: number; color: string }>());
+  const labelStems = useRef<GOverlay[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+
+  const layoutLabels = useCallback(() => {
+    if (!declutterLabels) return;
+    const map = mapRef.current;
+    const g = (window as unknown as { google?: GMapsGlobal }).google;
+    const projection = map?.getProjection();
+    if (!map || !g || !projection) return;
+    const div = map.getDiv(), scale = 2 ** map.getZoom();
+    const middle = projection.fromLatLngToPoint(map.getCenter());
+    const measured = new Map([...div.querySelectorAll<HTMLElement>(".gm-patient-label, .gm-vehicle-label")]
+      .map(element => [element.textContent, element.getBoundingClientRect()]));
+    const boxes = [...labelEntries.current].flatMap(([id, entry]) => {
+      if (!entry.marker.getMap()) return [];
+      const point = projection.fromLatLngToPoint(entry.marker.getPosition());
+      const x = (point.x-middle.x)*scale+div.clientWidth/2, y = (point.y-middle.y)*scale+div.clientHeight/2;
+      if (x < -40 || y < -40 || x > div.clientWidth+40 || y > div.clientHeight+40) return [];
+      const lines = entry.text.split("\n");
+      const actual = measured.get(entry.text);
+      const lineCount = lines.reduce((count, line) => count+Math.max(1, Math.ceil(line.length*6.5/222)), 0);
+      return [{ id, x, y, width: actual?.width || Math.min(240, Math.max(95, Math.max(...lines.map(line => line.length))*6.5+18)), height: actual?.height || lineCount*14+10, priority: entry.priority }];
+    });
+    labelStems.current.forEach(stem => stem.setMap(null)); labelStems.current = [];
+    for (const placed of arrangeMapLabels(boxes, div.clientWidth, div.clientHeight)) {
+      const entry = labelEntries.current.get(placed.id)!;
+      const dx = placed.x-placed.markerX, dy = placed.y-placed.markerY;
+      entry.marker.setIcon({ ...entry.icon, labelOrigin: new g.maps.Point(entry.anchorX+dx, entry.anchorY+dy) });
+      if (Math.abs(dx) > 6 || Math.abs(dy+46) > 6) {
+        const endY = placed.y + (placed.y < placed.markerY ? placed.height/2 : -placed.height/2);
+        const end = projection.fromPointToLatLng(new g.maps.Point(middle.x+(placed.x-div.clientWidth/2)/scale, middle.y+(endY-div.clientHeight/2)/scale));
+        labelStems.current.push(new g.maps.Polyline({ map, path: [entry.marker.getPosition(), end], strokeColor: entry.color, strokeOpacity: .75, strokeWeight: 1, clickable: false, zIndex: 6 }));
+      }
+    }
+  }, [declutterLabels]);
 
   const retry = useCallback(() => {
     // Error fallback replaces the map element. Never reuse a map attached to its old node.
@@ -191,6 +241,7 @@ export function GoogleMap({
     mapRef.current = null;
     boundsRef.current = null;
     didFit.current = false;
+    labelEntries.current.clear(); labelStems.current.forEach(stem => stem.setMap(null)); labelStems.current = [];
     setReady(false);
     resetGoogleMapsLoader();
     setError(null);
@@ -251,6 +302,7 @@ export function GoogleMap({
         clusterRef.current?.clearMarkers();
         markerRefs.current.forEach((m) => m.setMap(null));
         markerRefs.current = [];
+        [...labelEntries.current.keys()].filter(key => key.startsWith("patient:")).forEach(key => labelEntries.current.delete(key));
         overlayRefs.current.forEach((o) => o.setMap(null));
         overlayRefs.current = [];
 
@@ -266,11 +318,12 @@ export function GoogleMap({
             optimized: true,
             animation: m.emphasis || m.pulse ? g.maps.Animation.BOUNCE : undefined,
             zIndex: m.emphasis ? 999 : 1,
-            label: m.glyph ? { text: m.glyph, color: "#ffffff", fontSize: "10px", fontWeight: "700" } : undefined,
+            label: m.label ? { text: m.label, color: "#ffffff", fontSize: "11px", fontWeight: "600", className: "gm-patient-label" } : m.glyph ? { text: m.glyph, color: "#ffffff", fontSize: "10px", fontWeight: "700" } : undefined,
             icon: m.image ? {
-              url: import.meta.env.BASE_URL + "map-icons/" + m.image + ".png",
-              scaledSize: new g.maps.Size(m.image === "patient" ? 40 : 64, m.image === "patient" ? 60 : 43),
-              anchor: new g.maps.Point(m.image === "patient" ? 20 : 32, m.image === "patient" ? 60 : 22),
+              url: import.meta.env.BASE_URL + "map-icons/" + (m.image === "patient" ? "patient-beacon.png" : "ambulance.png"),
+              scaledSize: new g.maps.Size(m.image === "patient" ? 76 : 64, m.image === "patient" ? 25 : 43),
+              anchor: new g.maps.Point(m.image === "patient" ? 38 : 32, m.image === "patient" ? 25 : 22),
+              labelOrigin: new g.maps.Point(m.image === "patient" ? 38 : 32, -19),
             } : {
               path: g.maps.SymbolPath.CIRCLE,
               scale: m.scale ?? (m.emphasis ? 13 : 9),
@@ -281,6 +334,7 @@ export function GoogleMap({
             },
           });
           if (m.onClick) marker.addListener("click", m.onClick);
+          if (m.label) labelEntries.current.set(`patient:${m.id}`, { marker, text: m.label, icon: marker.getIcon(), anchorX: m.image === "patient" ? 38 : 32, anchorY: m.image === "patient" ? 25 : 22, priority: m.emphasis ? 3 : 2, color: "#fb7185" });
           markerRefs.current.push(marker);
           if (cluster && !m.noCluster && !m.emphasis) clusterable.push(marker);
 
@@ -358,6 +412,7 @@ export function GoogleMap({
 
         vehicles.forEach(vehicle => bounds.extend({ lat: vehicle.lat, lng: vehicle.lng }));
         boundsRef.current = bounds;
+        layoutLabels();
 
         if (fitToMarkers && markers.length + vehicles.length > 1 && (!didFit.current || vehicles.length > 0)) {
           map.fitBounds(bounds);
@@ -377,7 +432,7 @@ export function GoogleMap({
     return () => {
       cancelled = true;
     };
-  }, [markers, center?.lat, center?.lng, zoom, fitToMarkers, traffic, dark, mapTypeId, cluster, routesKey, fencesKey, vehiclesKey, retryKey]);
+  }, [markers, center?.lat, center?.lng, zoom, fitToMarkers, traffic, dark, mapTypeId, cluster, routesKey, fencesKey, vehiclesKey, retryKey, layoutLabels]);
 
   // Recenter when the caller moves the focus point.
   useEffect(() => {
@@ -398,6 +453,7 @@ export function GoogleMap({
       url: import.meta.env.BASE_URL + "map-icons/ambulance.png",
       scaledSize: new g.maps.Size(64, 43),
       anchor: new g.maps.Point(32, 22),
+      labelOrigin: new g.maps.Point(32, -19),
     });
     const seen = new Set<string>();
     vehicles.forEach((v) => {
@@ -416,6 +472,7 @@ export function GoogleMap({
           label: v.label ? { text: v.label, color: "#e2e8f0", fontSize: "10px", fontWeight: "700", className: "gm-vehicle-label" } : undefined,
         });
         if (v.onClick) marker.addListener("click", v.onClick);
+        if (v.label) labelEntries.current.set(`vehicle:${v.id}`, { marker, text: v.label, icon: icon(v, heading), anchorX: 32, anchorY: 22, priority: 1, color: "#7dd3fc" });
         vehicleRefs.current.set(v.id, { marker, lat: v.lat, lng: v.lng, heading, raf: null });
         return;
       }
@@ -423,6 +480,9 @@ export function GoogleMap({
       existing.marker.setIcon(icon(v, heading));
       existing.marker.setOpacity(v.stale ? 0.5 : 1);
       if (v.label) existing.marker.setTitle(v.label);
+      existing.marker.setLabel(v.label ? { text: v.label, color: "#e2e8f0", fontSize: "10px", fontWeight: "700", className: "gm-vehicle-label" } : null);
+      const label = labelEntries.current.get(`vehicle:${v.id}`);
+      if (label && v.label) label.text = v.label;
 
       const fromLat = existing.lat;
       const fromLng = existing.lng;
@@ -439,7 +499,6 @@ export function GoogleMap({
         const lat = fromLat + (v.lat - fromLat) * ease;
         const lng = fromLng + (v.lng - fromLng) * ease;
         existing.marker.setPosition({ lat, lng });
-        existing.marker.setIcon(icon(v, fromHeading + dHeading * ease));
         existing.lat = lat;
         existing.lng = lng;
         existing.heading = fromHeading + dHeading * ease;
@@ -449,6 +508,7 @@ export function GoogleMap({
           existing.lat = v.lat;
           existing.lng = v.lng;
           existing.heading = heading;
+          layoutLabels();
         }
       };
       existing.raf = requestAnimationFrame(step);
@@ -459,9 +519,18 @@ export function GoogleMap({
       if (seen.has(id)) return;
       if (entry.raf) cancelAnimationFrame(entry.raf);
       entry.marker.setMap(null);
+      labelEntries.current.delete(`vehicle:${id}`);
       vehicleRefs.current.delete(id);
     });
-  }, [vehiclesKey, ready, followVehicleId]);
+    layoutLabels();
+  }, [vehiclesKey, ready, followVehicleId, layoutLabels]);
+
+  useEffect(() => {
+    if (!ready || !mapRef.current || !declutterLabels) return;
+    const listener = mapRef.current.addListener("idle", layoutLabels);
+    layoutLabels();
+    return () => listener.remove();
+  }, [ready, declutterLabels, layoutLabels]);
 
   // Tear every vehicle marker down on unmount.
   useEffect(() => {
@@ -472,6 +541,8 @@ export function GoogleMap({
         e.marker.setMap(null);
       });
       store.clear();
+      labelStems.current.forEach(stem => stem.setMap(null));
+      labelEntries.current.clear();
     };
   }, []);
 
