@@ -4,6 +4,7 @@ import { MapFallback, type MapFallbackDetails } from "@/components/MapFallback";
 import { loadGoogleMaps, resetGoogleMapsLoader } from "@/lib/google-maps-loader";
 import { decodePolyline } from "@/lib/polyline";
 import { arrangeMapLabels } from "@/lib/map-label-layout";
+import { createMapCameraPolicy } from "@/lib/map-camera";
 export { loadGoogleMaps, resetGoogleMapsLoader } from "@/lib/google-maps-loader";
 
 export type MapMarker = {
@@ -169,7 +170,7 @@ export function GoogleMap({
   dark = false,
   routes = [],
   geofences = [],
-  mapTypeId = "hybrid",
+  mapTypeId = "roadmap",
   cluster = false,
   fallbackDetails,
   vehicles = [],
@@ -186,7 +187,9 @@ export function GoogleMap({
   const trafficRef = useRef<{ setMap: (m: GMap | null) => void } | null>(null);
   const boundsRef = useRef<GBounds | null>(null);
   const vehicleRefs = useRef<Map<string, { marker: GMarker; lat: number; lng: number; heading: number; raf: number | null }>>(new Map());
-  const didFit = useRef(false);
+  const latestVehicles = useRef(vehicles);
+  latestVehicles.current = vehicles;
+  const camera = useRef(createMapCameraPolicy());
   const labelEntries = useRef(new Map<string, { marker: GMarker; text: string; icon: Record<string, unknown>; anchorX: number; anchorY: number; priority: number; color: string }>());
   const labelStems = useRef<GOverlay[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -240,7 +243,7 @@ export function GoogleMap({
     trafficRef.current = null;
     mapRef.current = null;
     boundsRef.current = null;
-    didFit.current = false;
+    camera.current.reset();
     labelEntries.current.clear(); labelStems.current.forEach(stem => stem.setMap(null)); labelStems.current = [];
     setReady(false);
     resetGoogleMapsLoader();
@@ -333,7 +336,7 @@ export function GoogleMap({
               strokeWeight: m.emphasis ? 3 : 2,
             },
           });
-          if (m.onClick) marker.addListener("click", m.onClick);
+          marker.addListener("click", () => { camera.current.interact(); m.onClick?.(); });
           if (m.label) labelEntries.current.set(`patient:${m.id}`, { marker, text: m.label, icon: marker.getIcon(), anchorX: m.image === "patient" ? 24 : 32, anchorY: m.image === "patient" ? 44 : 22, priority: m.emphasis ? 3 : 2, color: "#fb7185" });
           markerRefs.current.push(marker);
           if (cluster && !m.noCluster && !m.emphasis) clusterable.push(marker);
@@ -362,7 +365,14 @@ export function GoogleMap({
               const { MarkerClusterer } = await import("@googlemaps/markerclusterer");
               if (cancelled) return;
               clusterable.forEach((m) => m.setMap(null));
-              clusterRef.current = new MarkerClusterer({ map: map as never, markers: clusterable as never });
+              clusterRef.current = new MarkerClusterer({
+                map: map as never, markers: clusterable as never,
+                onClusterClick: (_event, group) => {
+                  camera.current.interact();
+                  map.panTo({ lat: group.position.lat(), lng: group.position.lng() });
+                  map.setZoom(Math.min(21, map.getZoom() + 2));
+                },
+              });
             } else {
               clusterable.forEach((m) => m.setMap(null));
               clusterRef.current.addMarkers(clusterable as never);
@@ -414,13 +424,12 @@ export function GoogleMap({
         boundsRef.current = bounds;
         layoutLabels();
 
-        if (fitToMarkers && markers.length + vehicles.length > 1 && (!didFit.current || vehicles.length > 0)) {
+        const initialView = camera.current.initialView(fitToMarkers, markers.length, vehicles.length);
+        if (initialView === "fit") {
           map.fitBounds(bounds);
-          didFit.current = true;
-        } else if (markers.length === 1 && !didFit.current) {
+        } else if (initialView === "center") {
           map.setCenter({ lat: markers[0].lat, lng: markers[0].lng });
           map.setZoom(zoom);
-          didFit.current = true;
         }
       })
       .catch((err) => {
@@ -471,7 +480,7 @@ export function GoogleMap({
           icon: icon(v, heading),
           label: v.label ? { text: v.label, color: "#e2e8f0", fontSize: "10px", fontWeight: "700", className: "gm-vehicle-label" } : undefined,
         });
-        if (v.onClick) marker.addListener("click", v.onClick);
+        marker.addListener("click", () => { camera.current.interact(); latestVehicles.current.find(vehicle => vehicle.id === v.id)?.onClick?.(); });
         if (v.label) labelEntries.current.set(`vehicle:${v.id}`, { marker, text: v.label, icon: icon(v, heading), anchorX: 32, anchorY: 22, priority: 1, color: "#7dd3fc" });
         vehicleRefs.current.set(v.id, { marker, lat: v.lat, lng: v.lng, heading, raf: null });
         return;
@@ -532,6 +541,14 @@ export function GoogleMap({
     return () => listener.remove();
   }, [ready, declutterLabels, layoutLabels]);
 
+  useEffect(() => {
+    const div = mapRef.current?.getDiv();
+    if (!ready || !div) return;
+    const interact = () => camera.current.interact();
+    for (const event of ["pointerdown", "wheel", "keydown"]) div.addEventListener(event, interact, { capture: true, passive: true });
+    return () => { for (const event of ["pointerdown", "wheel", "keydown"]) div.removeEventListener(event, interact, true); };
+  }, [ready]);
+
   // Tear every vehicle marker down on unmount.
   useEffect(() => {
     const store = vehicleRefs.current;
@@ -549,6 +566,7 @@ export function GoogleMap({
   // Snap the camera onto a requested point (recenter buttons).
   useEffect(() => {
     if (!focus || !mapRef.current || !ready) return;
+    camera.current.interact();
     mapRef.current.panTo({ lat: focus.lat, lng: focus.lng });
     if (focus.zoom) mapRef.current.setZoom(focus.zoom);
   }, [focus?.nonce, ready]);
@@ -556,6 +574,7 @@ export function GoogleMap({
   // Fit everything currently drawn (fit-route button).
   useEffect(() => {
     if (!fitNonce || !mapRef.current || !ready || !boundsRef.current) return;
+    camera.current.interact();
     vehicles.forEach(vehicle => boundsRef.current!.extend({ lat: vehicle.lat, lng: vehicle.lng }));
     if (boundsRef.current.isEmpty()) return;
     mapRef.current.fitBounds(boundsRef.current);

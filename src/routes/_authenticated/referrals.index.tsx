@@ -315,7 +315,7 @@ function ReferralCommandCentre() {
                 vehicles={mapVehicles}
                 center={{ lat: -24.6282, lng: 25.9231 }}
                 zoom={6}
-                mapTypeId="hybrid"
+                mapTypeId="roadmap"
                 className="h-[420px] w-full lg:h-[560px]"
                 fallbackDetails={{}}
               />

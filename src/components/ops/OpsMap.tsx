@@ -45,14 +45,14 @@ export function OpsMap({
   incidents, units, hospitals, selectedId, onSelect, traffic, onToggleTraffic, showUnits, onToggleUnits, center,
 }: Props) {
   const [mapTypeId, setMapTypeId] = useState<MapTypeId>(() => {
-    if (typeof window === "undefined") return "hybrid";
-    const saved = window.localStorage.getItem("beacon.mapType.v2");
-    return saved === "roadmap" || saved === "hybrid" ? (saved as MapTypeId) : "hybrid";
+    if (typeof window === "undefined") return "roadmap";
+    const saved = window.localStorage.getItem("beacon.mapType.v3");
+    return saved === "roadmap" || saved === "hybrid" ? (saved as MapTypeId) : "roadmap";
   });
   const setMapType = (next: MapTypeId) => {
     setMapTypeId(next);
     try {
-      window.localStorage.setItem("beacon.mapType.v2", next);
+      window.localStorage.setItem("beacon.mapType.v3", next);
     } catch {
       /* storage unavailable */
     }
