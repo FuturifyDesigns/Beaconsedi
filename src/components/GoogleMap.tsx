@@ -169,7 +169,7 @@ export function GoogleMap({
   dark = false,
   routes = [],
   geofences = [],
-  mapTypeId = "roadmap",
+  mapTypeId = "hybrid",
   cluster = false,
   fallbackDetails,
   vehicles = [],
@@ -211,14 +211,14 @@ export function GoogleMap({
       const lines = entry.text.split("\n");
       const actual = measured.get(entry.text);
       const lineCount = lines.reduce((count, line) => count+Math.max(1, Math.ceil(line.length*6.5/222)), 0);
-      return [{ id, x, y, width: actual?.width || Math.min(240, Math.max(95, Math.max(...lines.map(line => line.length))*6.5+18)), height: actual?.height || lineCount*14+10, priority: entry.priority }];
+      return [{ id, x, y, width: actual?.width || Math.min(240, Math.max(95, Math.max(...lines.map(line => line.length))*6.5+18)), height: actual?.height || lineCount*14+10, priority: entry.priority, clearance: entry.anchorY+19 }];
     });
     labelStems.current.forEach(stem => stem.setMap(null)); labelStems.current = [];
     for (const placed of arrangeMapLabels(boxes, div.clientWidth, div.clientHeight)) {
       const entry = labelEntries.current.get(placed.id)!;
       const dx = placed.x-placed.markerX, dy = placed.y-placed.markerY;
       entry.marker.setIcon({ ...entry.icon, labelOrigin: new g.maps.Point(entry.anchorX+dx, entry.anchorY+dy) });
-      if (Math.abs(dx) > 6 || Math.abs(dy+46) > 6) {
+      if (Math.abs(dx) > 6 || Math.abs(dy+Math.max(46, entry.anchorY+19)) > 6) {
         const endY = placed.y + (placed.y < placed.markerY ? placed.height/2 : -placed.height/2);
         const end = projection.fromPointToLatLng(new g.maps.Point(middle.x+(placed.x-div.clientWidth/2)/scale, middle.y+(endY-div.clientHeight/2)/scale));
         labelStems.current.push(new g.maps.Polyline({ map, path: [entry.marker.getPosition(), end], strokeColor: entry.color, strokeOpacity: .75, strokeWeight: 1, clickable: false, zIndex: 6 }));
@@ -320,10 +320,10 @@ export function GoogleMap({
             zIndex: m.emphasis ? 999 : 1,
             label: m.label ? { text: m.label, color: "#ffffff", fontSize: "11px", fontWeight: "600", className: "gm-patient-label" } : m.glyph ? { text: m.glyph, color: "#ffffff", fontSize: "10px", fontWeight: "700" } : undefined,
             icon: m.image ? {
-              url: import.meta.env.BASE_URL + "map-icons/" + (m.image === "patient" ? "patient-beacon.png" : "ambulance.png"),
-              scaledSize: new g.maps.Size(m.image === "patient" ? 76 : 64, m.image === "patient" ? 25 : 43),
-              anchor: new g.maps.Point(m.image === "patient" ? 38 : 32, m.image === "patient" ? 25 : 22),
-              labelOrigin: new g.maps.Point(m.image === "patient" ? 38 : 32, -19),
+              url: import.meta.env.BASE_URL + "map-icons/" + (m.image === "patient" ? "patient-beacon-round.png" : "ambulance.png"),
+              scaledSize: new g.maps.Size(m.image === "patient" ? 48 : 64, m.image === "patient" ? 44 : 43),
+              anchor: new g.maps.Point(m.image === "patient" ? 24 : 32, m.image === "patient" ? 44 : 22),
+              labelOrigin: new g.maps.Point(m.image === "patient" ? 24 : 32, -19),
             } : {
               path: g.maps.SymbolPath.CIRCLE,
               scale: m.scale ?? (m.emphasis ? 13 : 9),
@@ -334,7 +334,7 @@ export function GoogleMap({
             },
           });
           if (m.onClick) marker.addListener("click", m.onClick);
-          if (m.label) labelEntries.current.set(`patient:${m.id}`, { marker, text: m.label, icon: marker.getIcon(), anchorX: m.image === "patient" ? 38 : 32, anchorY: m.image === "patient" ? 25 : 22, priority: m.emphasis ? 3 : 2, color: "#fb7185" });
+          if (m.label) labelEntries.current.set(`patient:${m.id}`, { marker, text: m.label, icon: marker.getIcon(), anchorX: m.image === "patient" ? 24 : 32, anchorY: m.image === "patient" ? 44 : 22, priority: m.emphasis ? 3 : 2, color: "#fb7185" });
           markerRefs.current.push(marker);
           if (cluster && !m.noCluster && !m.emphasis) clusterable.push(marker);
 

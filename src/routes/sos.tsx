@@ -480,7 +480,7 @@ function SOSPage() {
                   markers={markers}
                   center={{ lat: coords.latitude, lng: coords.longitude }}
                   zoom={16}
-                  mapTypeId="roadmap"
+                  mapTypeId="hybrid"
                   geofences={[{ id: "search", lat: coords.latitude, lng: coords.longitude, radiusMeters: 800 }]}
                   fitToMarkers={!!unitPoint}
                   vehicles={

@@ -453,7 +453,7 @@ function ReferralDetailPage() {
                 followVehicleId={TRACKING_STATUSES.includes(referral.status) ? (unit?.id ?? null) : null}
                 center={from ? { lat: from.latitude, lng: from.longitude } : undefined}
                 zoom={7}
-                mapTypeId="roadmap"
+                mapTypeId="hybrid"
                 className="h-[320px] w-full"
                 fallbackDetails={{ lat: unit?.latitude, lng: unit?.longitude, address: to?.name }}
               />
