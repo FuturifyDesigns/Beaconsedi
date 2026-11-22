@@ -90,11 +90,11 @@ export function AppShell({ children }: Props) {
       </header>
       <div className="md:pl-60">
         {/* Mobile bottom nav */}
-        <nav className="fixed inset-x-0 bottom-0 z-10 flex items-center gap-1 overflow-x-auto border-t border-border bg-background px-2 py-2 md:hidden">
+        <nav aria-label="Main navigation" className="fixed inset-x-0 bottom-0 z-10 flex items-stretch gap-1 overflow-x-auto border-t border-border bg-background px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:hidden">
           {nav.map(({ to, label, icon: Icon }) => {
             const active = path === to;
             return (
-              <Link key={to} to={to} className={`flex shrink-0 flex-col items-center gap-0.5 rounded-md px-3 py-1.5 text-[10px] ${active ? "text-emergency" : "text-muted-foreground"}`}>
+              <Link key={to} to={to} aria-current={active ? "page" : undefined} className={`flex min-h-11 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-0.5 rounded-md px-2 py-1.5 text-[10px] ${active ? "text-emergency" : "text-muted-foreground"}`}>
                 <Icon className="h-5 w-5" /> {label.split(" ")[0]}
               </Link>
             );

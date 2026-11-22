@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useRouteContext } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Siren, MapPin, Clock, Radio } from "lucide-react";
+import { Siren, MapPin, Clock, Radio, PhoneCall } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/AppShell";
 import { useRoles } from "@/hooks/useRole";
@@ -56,6 +56,14 @@ function Dashboard() {
           </div>
           <span className="text-xs font-semibold uppercase tracking-wider">Go →</span>
         </Link>
+
+        <a
+          href="tel:997"
+          className="mt-3 flex min-h-14 items-center justify-center gap-2 rounded-2xl border border-emergency/40 bg-card px-5 py-4 font-semibold text-emergency transition hover:bg-emergency/10"
+        >
+          <PhoneCall className="h-5 w-5" aria-hidden="true" />
+          Call 997 — Ambulance
+        </a>
 
         {(isResponder || isAdmin) && (
           <Link
