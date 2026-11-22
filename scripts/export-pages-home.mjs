@@ -19,11 +19,11 @@ const assets = new Set();
 const page = (await response.text())
   // The public homepage links to the Worker for all interactive app routes.
   .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
-  .replace(/<link\b[^>]*\brel="(?:modulepreload|manifest)"[^>]*>/gi, "")
+  .replace(/<link\b[^>]*\brel="(?:modulepreload|manifest|apple-touch-startup-image)"[^>]*>/gi, "")
   .replace(/\b(href|src)="(\/(?!\/)[^"]*)"/g, (attribute, name, url) => {
     if (url === "/") return name + '="./"';
     if (/^\/assets\/[a-z0-9_.-]+[.](?:css|jpg|jpeg|png|webp|woff2?)$/i.test(url) ||
-        url === "/favicon.ico" || url === "/apple-touch-icon.png") {
+        /^\/branding\/[a-z0-9_.-]+[.](?:png|ico|webp)$/i.test(url) || url === "/favicon.ico" || url === "/apple-touch-icon.png") {
       assets.add(url);
       return name + '=".' + url + '"';
     }
@@ -33,8 +33,8 @@ const page = (await response.text())
     return attribute;
   });
 
-if (!page.includes(worker.origin + "/sos") || !page.includes(worker.origin + "/auth")) {
-  throw new Error("The public entry page is missing its SOS or sign-in link.");
+if (!page.includes("mode=signup") || !page.includes(worker.origin + "/auth")) {
+  throw new Error("The public entry page is missing its account creation or sign-in link.");
 }
 
 const output = "output/pages";

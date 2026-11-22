@@ -50,8 +50,8 @@ export function OpsHeader({ activeCount, criticalCount, availableUnits, totalUni
   return (
     <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-card/60 px-4 py-3 backdrop-blur lg:flex lg:flex-wrap lg:justify-between">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emergency text-emergency-foreground">
-          <StarOfLife className="h-6 w-6" />
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg">
+          <StarOfLife className="h-9 w-9" />
         </span>
         <div className="min-w-0">
           <h1 className="truncate text-base font-black tracking-tight sm:text-lg">

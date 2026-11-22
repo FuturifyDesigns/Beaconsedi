@@ -1,3 +1,4 @@
+import { hasRegisteredAccount } from "@/lib/account-access";
 import { PHONE_PATTERN, phoneValue, textValue } from "@/lib/validation";
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
@@ -8,6 +9,7 @@ import { lovable } from "@/integrations/lovable";
 import { StarOfLife } from "@/components/StarOfLife";
 
 export const Route = createFileRoute("/auth")({
+  validateSearch: (search: Record<string, unknown>): { mode?: "signup" } => search.mode === "signup" ? { mode: "signup" } : {},
   head: () => ({
     meta: [
       { title: "Sign in — BEACON SEDI EMERGENCY APP" },
@@ -23,7 +25,8 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const { mode: requestedMode } = Route.useSearch();
+  const [mode, setMode] = useState<"signin" | "signup">(requestedMode ?? "signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -49,12 +52,12 @@ function AuthPage() {
   }, []);
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("mode") === "signup") setMode("signup");
-  }, []);
+    setMode(requestedMode ?? "signin");
+  }, [requestedMode]);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user) navigate({ to: "/dashboard" });
+      if (hasRegisteredAccount(data.user)) navigate({ to: "/dashboard" });
     });
   }, [navigate]);
 
@@ -126,8 +129,8 @@ function AuthPage() {
       <main className="mx-auto grid min-h-[calc(100vh-49px)] max-w-md place-items-center px-4 py-5 sm:py-10">
         <div className="w-full">
           <div className="mb-6 flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-emergency text-emergency-foreground">
-              <StarOfLife className="h-6 w-6" />
+            <span className="grid h-10 w-10 place-items-center rounded-xl">
+              <StarOfLife className="h-9 w-9" />
             </span>
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">BEACON SEDI EMERGENCY APP</p>
@@ -196,8 +199,7 @@ function AuthPage() {
           </div>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            In an emergency you don't need an account.{" "}
-            <Link to="/sos" className="font-medium text-emergency hover:underline">Send anonymous SOS →</Link>
+            Create an account and sign in to request assistance and use the service.
           </p>
         </div>
       </main>

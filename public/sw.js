@@ -2,9 +2,9 @@
 // Network-first for everything; only when the network fails is the offline page served.
 const SCOPE = self.registration.scope;
 const CACHE_PREFIX = `beacon-offline:${SCOPE}:`;
-const CACHE = `${CACHE_PREFIX}v4`;
+const CACHE = `${CACHE_PREFIX}v5`;
 const OFFLINE_URL = new URL("offline.html", SCOPE).href;
-const ASSETS = [OFFLINE_URL, new URL("icon-192.png", SCOPE).href];
+const ASSETS = [OFFLINE_URL, new URL("branding/beacon-sedi-logo.png", SCOPE).href];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));

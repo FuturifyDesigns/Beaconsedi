@@ -45,8 +45,8 @@ export function CommandShell({
       {/* Sidebar */}
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-56 flex-col border-r border-sidebar-border bg-sidebar/95 backdrop-blur lg:flex">
         <div className="flex items-center gap-2 px-4 py-4 text-sm font-semibold text-sidebar-foreground">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-emergency text-emergency-foreground" aria-hidden="true">
-            <StarOfLife className="h-5 w-5" />
+          <span className="grid h-8 w-8 place-items-center rounded-lg" aria-hidden="true">
+            <StarOfLife className="h-8 w-8" />
           </span>
           <span>
             BEACON SEDI

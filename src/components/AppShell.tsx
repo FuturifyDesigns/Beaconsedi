@@ -45,8 +45,8 @@ export function AppShell({ children }: Props) {
     <div className="min-h-screen bg-background text-foreground">
       <aside className="fixed inset-y-0 left-0 hidden w-60 border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex md:flex-col">
         <div className="flex items-center gap-2 px-5 py-5 font-semibold">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-emergency text-emergency-foreground">
-            <StarOfLife className="h-5 w-5" />
+          <span className="grid h-8 w-8 place-items-center rounded-lg">
+            <StarOfLife className="h-8 w-8" />
           </span>
           <span className="leading-tight">BEACON SEDI<span className="block text-[10px] font-medium text-muted-foreground">EMERGENCY APP</span></span>
         </div>
@@ -81,8 +81,8 @@ export function AppShell({ children }: Props) {
       {/* Mobile top bar */}
       <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background/80 px-4 py-3 backdrop-blur md:hidden">
         <Link to="/dashboard" className="flex items-center gap-2 font-semibold">
-          <span className="grid h-7 w-7 place-items-center rounded-md bg-emergency text-emergency-foreground">
-            <StarOfLife className="h-4 w-4" />
+          <span className="grid h-7 w-7 place-items-center rounded-md">
+            <StarOfLife className="h-7 w-7" />
           </span>
           <span className="text-xs">BEACON SEDI</span>
         </Link>

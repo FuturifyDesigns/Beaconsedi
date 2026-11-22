@@ -1,5 +1,6 @@
+import { hasRegisteredAccount } from "@/lib/account-access";
 import { phoneValue, textValue, PHONE_PATTERN } from "@/lib/validation";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Siren, MapPin, ArrowLeft, CheckCircle2, Loader2, PhoneCall } from "lucide-react";
 import { toast } from "sonner";
@@ -20,6 +21,11 @@ import { Button } from "@/components/ui/button";
 import { shouldSharePatientFix } from "@/lib/location-sharing";
 
 export const Route = createFileRoute("/sos")({
+  ssr: false,
+  beforeLoad: async () => {
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !hasRegisteredAccount(data.user)) throw redirect({ to: "/auth" });
+  },
   head: () => ({
     meta: [
       { title: "Emergency SOS — BEACON SEDI EMERGENCY APP" },
@@ -136,7 +142,8 @@ function SOSPage() {
       setCoords(c);
       setStage("sending");
       const { data: userData } = await supabase.auth.getUser();
-      const patient_id = userData.user?.id ?? null;
+      if (!hasRegisteredAccount(userData.user)) throw new Error("Sign in to request assistance");
+      const patient_id = userData.user.id;
       let patient_name = name.trim() || null;
       let patient_phone = phone.trim() || null;
       if (patient_id && !patient_name) {
