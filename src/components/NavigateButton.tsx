@@ -7,6 +7,7 @@ import {
   navigateToIncident,
   type Destination,
   type NavigationProvider,
+  isValidCoords,
 } from "@/lib/navigation";
 import {
   LocationPermissionError,
@@ -32,6 +33,7 @@ type Props = {
   hasCoords?: boolean;
   className?: string;
   compact?: boolean;
+  currentLocation?: (Destination & { at?: number }) | null;
 };
 
 /**
@@ -39,7 +41,7 @@ type Props = {
  * On mobile the responder picks Blue Light Maps (blue-light emergency routing,
  * primary) or Google Maps; on desktop only Google Maps has a web version.
  */
-export function NavigateButton({ incidentId, hasCoords = true, className, compact }: Props) {
+export function NavigateButton({ incidentId, hasCoords = true, className, compact, currentLocation }: Props) {
   const [loading, setLoading] = useState(false);
   const [blocked, setBlocked] = useState<{ reason: LocationBlockReason; message: string } | null>(null);
   const [choosing, setChoosing] = useState<Destination | null>(null);
@@ -55,7 +57,12 @@ export function NavigateButton({ incidentId, hasCoords = true, className, compac
   const go = async () => {
     setLoading(true);
     try {
-      const coords = await ensureLocationAvailable();
+      // Reuse the crew map's recent live fix instead of starting a second GPS
+      // request that may fail while the existing position watch is healthy.
+      const age = currentLocation?.at ? Date.now() - currentLocation.at : Infinity;
+      const coords = isValidCoords(currentLocation) && age >= 0 && age <= 15_000
+        ? currentLocation
+        : await ensureLocationAvailable();
       const origin = { latitude: coords.latitude, longitude: coords.longitude };
       if (detectPlatform() === "desktop") {
         await launch(origin, "google");
@@ -115,8 +122,7 @@ export function NavigateButton({ incidentId, hasCoords = true, className, compac
         disabled={loading || !hasCoords}
         aria-label="Navigate to patient location"
         className={
-          className ??
-          `inline-flex ${compact ? "min-h-9" : "min-h-11"} items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-xs font-medium transition hover:bg-accent disabled:opacity-40`
+          `inline-flex ${compact ? "min-h-9" : "min-h-11"} items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-semibold transition hover:bg-accent disabled:opacity-40 ${className ?? ""}`
         }
       >
         {loading ? (

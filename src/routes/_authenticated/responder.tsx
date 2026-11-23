@@ -13,7 +13,7 @@ import { GoogleMap, type MapMarker } from "@/components/GoogleMap";
 import { useRoles } from "@/hooks/useRole";
 import { useHospitals, useIncidentEvents, useIncidents, useUnits } from "@/hooks/useOpsData";
 import {
-  useActiveShift, useAssignedUnit, useCurrentUser, useInactivityLogout, useNotifications, useOwnPosition,
+  useActiveShift, useAssignedVehicle, useCurrentUser, useInactivityLogout, useNotifications, useOwnPosition,
   usePatientProfile, useResponderProfile, useResponderRealtime, useShiftEvents, useShiftHistory, useTeam,
 } from "@/hooks/useResponder";
 import { CommandShell, type SectionKey } from "@/components/command/CommandShell";
@@ -90,7 +90,7 @@ function ResponderCommandPage() {
   const { data: shift } = shiftQuery;
   const { data: shiftHistory = [] } = useShiftHistory(user?.id);
   const { data: shiftEvents = [] } = useShiftEvents(shift?.id ?? shiftHistory[0]?.id);
-  const { data: vehicle } = useAssignedUnit(profile?.assigned_unit_id);
+  const { data: vehicle } = useAssignedVehicle(user?.id);
   const { data: notifications = [] } = useNotifications(user?.id);
   const ownPos = useOwnPosition(enabled);
 
@@ -125,10 +125,10 @@ function ResponderCommandPage() {
     () =>
       active.find(
         (i) =>
-          (!!profile?.assigned_unit_id && i.assigned_unit_id === profile.assigned_unit_id) ||
+          (!!vehicle?.id && i.assigned_unit_id === vehicle.id) ||
           (!!user?.id && i.responder_id === user.id),
       ) ?? null,
-    [active, profile?.assigned_unit_id, user?.id],
+    [active, vehicle?.id, user?.id],
   );
 
   // Broadcast this responder's live GPS so dispatch and the patient can track them.
@@ -136,7 +136,7 @@ function ResponderCommandPage() {
     // Always live-tracked once dispatched, even without an open shift.
     active: enabled && ((!!shift && shift.status !== "completed") || !!myIncident),
     responderId: user?.id,
-    unitId: profile?.assigned_unit_id ?? null,
+    unitId: vehicle?.id ?? null,
     incidentId: myIncident?.id ?? null,
     scene: myIncident ? { lat: myIncident.latitude, lng: myIncident.longitude } : null,
     status: vehicle?.status ?? profile?.availability ?? null,
@@ -202,7 +202,7 @@ function ResponderCommandPage() {
         userId: user.id,
         actorName: profile?.full_name ?? user.email ?? null,
         units,
-        preferredUnitId: profile?.assigned_unit_id ?? null,
+        preferredUnitId: vehicle?.id ?? null,
       });
       if (action === "acknowledge" || action === "dispatch" || action === "arrive" || action === "transport") {
         await updateAvailability("responding");

@@ -1,3 +1,4 @@
+import sosBeacon from "@/assets/sos-beacon-realistic.webp";
 import { hasRegisteredAccount } from "@/lib/account-access";
 import { phoneValue, textValue, PHONE_PATTERN } from "@/lib/validation";
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
@@ -360,6 +361,7 @@ function SOSPage() {
             <div className="my-10 grid place-items-center">
               <button
                 type="button"
+                aria-label="Press and hold to send emergency SOS"
                 disabled={stage !== "idle" || recovering || recoveryError}
                 onPointerDown={startHold}
                 className="relative grid h-52 w-52 place-items-center rounded-full bg-emergency text-emergency-foreground shadow-[var(--shadow-emergency)] transition disabled:opacity-70"
@@ -370,7 +372,7 @@ function SOSPage() {
                 }}
               >
                 <span className="absolute inset-3 grid place-items-center rounded-full bg-emergency">
-                  {stage === "idle" && <Siren className="h-16 w-16" />}
+                  {stage === "idle" && <img src={sosBeacon} alt="" draggable={false} width={112} height={112} className="pointer-events-none h-28 w-28 select-none object-contain drop-shadow-lg" />}
                   {(stage === "locating" || stage === "sending") && <Loader2 className="h-16 w-16 animate-spin" />}
                 </span>
               </button>

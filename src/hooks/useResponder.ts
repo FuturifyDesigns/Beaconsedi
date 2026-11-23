@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Notification, PatientProfile, ResponderProfile, Shift, ShiftEvent } from "@/lib/responder";
 import { playAlertTone } from "@/lib/responder";
 import type { Unit } from "@/lib/ops";
-import { applyIncidentChange, applyUnitChange } from "@/lib/live-query";
+import { applyIncidentChange, applyUnitChange, applyAssignedVehicleChange } from "@/lib/live-query";
 
 export function useCurrentUser() {
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
@@ -120,6 +120,20 @@ export function useAssignedUnit(unitId: string | null | undefined) {
   });
 }
 
+/** The vehicle owner is the authoritative assignment used by dispatch. */
+export function useAssignedVehicle(userId: string | undefined) {
+  return useQuery({
+    queryKey: ["responder", "assigned-vehicle", userId],
+    enabled: !!userId,
+    refetchInterval: 15_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("responder_units").select("*").eq("user_id", userId!).maybeSingle();
+      if (error) throw error;
+      return data as (Unit & { registration_number: string | null; vehicle_number: string | null; fuel_level: number; mileage_km: number; last_inspection: string | null; equipment_status: string; image_url: string | null }) | null;
+    },
+  });
+}
+
 export function useNotifications(userId: string | undefined) {
   return useQuery({
     queryKey: ["responder", "notifications", userId],
@@ -170,11 +184,20 @@ export function useResponderRealtime(enabled: boolean, userId: string | undefine
           });
         }
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "responder_units" }, payload => applyUnitChange(queryClient, payload))
+      .on("postgres_changes", { event: "*", schema: "public", table: "responder_units" }, payload => {
+        applyUnitChange(queryClient, payload);
+        applyAssignedVehicleChange(queryClient, userId, payload);
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "incident_events" }, () => {
         queryClient.invalidateQueries({ queryKey: ["ops", "events"] });
       })
-      .subscribe(status => queryClient.setQueryData(["live-status", "ops"], status === "SUBSCRIBED"));
+      .subscribe(status => {
+        queryClient.setQueryData(["live-status", "ops"], status === "SUBSCRIBED");
+        if (status === "SUBSCRIBED") {
+          void queryClient.invalidateQueries({ queryKey: ["responder"] });
+          void queryClient.invalidateQueries({ queryKey: ["ops", "incidents"] });
+        }
+      });
 
     const staffChannel = supabase.channel(`staff-workflows-${userId ?? "staff"}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "shifts" }, () => {

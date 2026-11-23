@@ -38,6 +38,22 @@ export function applyUnitChange(client: QueryClient, change: LiveChange) {
   if (id) client.setQueryData<Unit | null>(["responder", "unit", id], old => old === undefined ? old : change.eventType === "DELETE" ? null : { ...old, ...change.new } as Unit);
 }
 
+/** Reassignments clear the former crew's vehicle; GPS changes need no extra reads. */
+export function applyAssignedVehicleChange(client: QueryClient, userId: string | undefined, change: LiveChange) {
+  if (!userId) return;
+  const key = ["responder", "assigned-vehicle", userId];
+  const update = (current: Unit | null | undefined) => {
+    const id = (change.eventType === "DELETE" ? change.old.id : change.new.id) as string;
+    if (change.eventType !== "DELETE" && change.new.user_id === userId) return { ...current, ...change.new } as Unit;
+    return current?.id === id ? null : current;
+  };
+  const query = client.getQueryCache().find({ queryKey: key, exact: true });
+  if (query?.state.fetchStatus === "fetching" && query.promise) {
+    void query.promise.then(() => client.setQueryData(key, update)).catch(() => {});
+  }
+  client.setQueryData(key, update);
+}
+
 type Shared = { count: number; stop: () => void };
 const subscriptions = new WeakMap<object, Map<string, Shared>>();
 

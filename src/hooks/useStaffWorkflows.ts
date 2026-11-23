@@ -38,7 +38,13 @@ export function useStaffProfileEditor(user: { id: string; email: string } | null
       if (!(String(payload.certification_level) in CERT_LEVELS)) throw new Error("Choose a valid certification level");
       payload.years_of_service = draft.years_of_service ?? 0;
       if (!Number.isInteger(payload.years_of_service) || Number(payload.years_of_service) < 0 || Number(payload.years_of_service) > 80) throw new Error("Years of service must be between 0 and 80");
-      const { error } = await supabase.from("responder_profiles").upsert(payload as never, { onConflict: "user_id" });
+      // Assignment-created profiles already exist. Update only editable fields:
+      // an upsert's INSERT path can conflict with assignment-protection policies.
+      const { data: existing, error: readError } = await supabase.from("responder_profiles").select("user_id").eq("user_id", user.id).maybeSingle();
+      if (readError) throw readError;
+      const { error } = existing
+        ? await supabase.from("responder_profiles").update(payload as never).eq("user_id", user.id)
+        : await supabase.from("responder_profiles").insert(payload as never);
       if (error) throw error;
     },
     onSuccess: async () => {
