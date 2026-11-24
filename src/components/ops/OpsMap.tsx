@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { activeDispatches, dispatchMapScope } from "@/lib/dispatch-monitor";
 import { GoogleMap, type LiveVehicle, type MapMarker, type MapRoute, type MapTypeId } from "@/components/GoogleMap";
 import { Crosshair, Layers, LocateFixed, Maximize2, Minimize2, TrafficCone, Map as MapIcon, Satellite, Timer } from "lucide-react";
 import { PRIORITY_HEX, UNIT_KIND, distanceKm, type Hospital, type Incident, type Unit } from "@/lib/ops";
@@ -62,6 +63,15 @@ export function OpsMap({
   const [expanded, setExpanded] = useState(false);
   const [focus, setFocus] = useState<{ lat: number; lng: number; zoom?: number; nonce: number } | null>(null);
   const [fitNonce, setFitNonce] = useState(0);
+  const [focused, setFocused] = useState(true);
+  const dispatches = activeDispatches(incidents);
+  const scope = dispatchMapScope(incidents, units, selectedId, focused);
+  // Frame a deliberately selected dispatch once. GPS updates preserve the operator's zoom.
+  useEffect(() => {
+    setFollow(false);
+    setFocus(null);
+    setFitNonce(n => n + 1);
+  }, [selectedId, focused]);
 
   const selected = incidents.find((i) => i.id === selectedId) ?? null;
   const assigned = selected ? units.find((u) => u.id === selected.assigned_unit_id) ?? null : null;
@@ -84,7 +94,7 @@ export function OpsMap({
 
 
   const markers: MapMarker[] = useMemo(() => {
-    const incidentMarkers: MapMarker[] = incidents.map((i) => ({
+    const incidentMarkers: MapMarker[] = scope.incidents.map((i) => ({
       id: `inc-${i.id}`,
       image: "patient",
       lat: i.latitude,
@@ -100,7 +110,7 @@ export function OpsMap({
       onClick: () => onSelect(i.id),
     }));
 
-    const hospitalMarkers: MapMarker[] = hospitals.map((h) => ({
+    const hospitalMarkers: MapMarker[] = (focused ? [] : hospitals).map((h) => ({
       id: `hosp-${h.id}`,
       lat: h.latitude,
       lng: h.longitude,
@@ -111,13 +121,13 @@ export function OpsMap({
     }));
 
     return [...hospitalMarkers, ...incidentMarkers];
-  }, [incidents, hospitals, selectedId, onSelect, units]);
+  }, [incidents, hospitals, selectedId, onSelect, units, focused]);
 
   // Every role-assigned vehicle with a real GPS fix, streamed live from the database.
   const vehicles: LiveVehicle[] = useMemo(() => {
     const list: LiveVehicle[] = [];
     if (showUnits) {
-      for (const u of units) {
+      for (const u of scope.units) {
         if (u.id === assigned?.id || u.latitude == null || u.longitude == null || u.status === "offline") continue;
         const g = gpsState(u.last_location_update ?? null);
         list.push({
@@ -145,7 +155,7 @@ export function OpsMap({
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [units, incidents, showUnits, onSelect, assigned?.id, assigned?.call_sign, assigned?.status, unitPos?.lat, unitPos?.lng, livePoint?.heading, fix]);
+  }, [units, incidents, showUnits, onSelect, assigned?.id, assigned?.call_sign, assigned?.status, unitPos?.lat, unitPos?.lng, livePoint?.heading, fix, focused]);
 
   const routes: MapRoute[] = [
     ...(route?.polyline ? [{ id: "active-route", encoded: route.polyline, color: "#38bdf8", weight: 6 }] : []),
@@ -178,6 +188,34 @@ export function OpsMap({
           : "relative flex min-h-[320px] flex-col overflow-hidden rounded-xl border border-border bg-card"
       }
     >
+      <div className="order-0 space-y-3 border-b border-border bg-card p-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="min-w-0 flex-1 text-xs font-semibold" htmlFor="dispatch-monitor">
+            Monitor dispatch · {dispatches.length} active
+            <select id="dispatch-monitor" value={selected?.assigned_unit_id ? selected.id : ""}
+              onChange={e => { if (e.target.value) { onSelect(e.target.value); setFocused(true); } }}
+              className="mt-2 min-h-11 w-full min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-normal">
+              <option value="" disabled>{dispatches.length ? "Choose a dispatch team" : "No active dispatches"}</option>
+              {dispatches.map(i => <option key={i.id} value={i.id}>{units.find(u => u.id === i.assigned_unit_id)?.call_sign ?? "Assigned ambulance"} · {i.patient_name ?? "Patient"} · {i.incident_code ?? i.id.slice(0, 8)} · {i.status.replace(/_/g, " ")}</option>)}
+            </select>
+          </label>
+          <button type="button" aria-pressed={focused} onClick={() => setFocused(v => !v)} className={toggleClass(focused)}>
+            {focused ? "Show all teams" : "Focus selected dispatch"}
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">{focused ? "Focused view: only the selected patient and assigned ambulance are shown. Other calls remain in the incident queue." : "Overview: all active patients, units and hospitals. Choose a dispatch to view its route."}</p>
+        {selected && <div aria-label="Monitored dispatch details" className="grid min-w-0 gap-2 rounded-lg border border-border bg-background/50 p-3 text-xs sm:grid-cols-2">
+          <p className="break-words"><span className="text-muted-foreground">Patient: </span>{selected.patient_name ?? "Name unavailable"} · {selected.incident_code ?? selected.id.slice(0, 8)}</p>
+          <p className="break-words"><span className="text-muted-foreground">Team: </span>{assigned ? `${assigned.call_sign} · ${assigned.name}` : "Not assigned"}</p>
+          <p className="capitalize"><span className="text-muted-foreground">Status: </span>{selected.status.replace(/_/g, " ")} · {selected.priority} priority</p>
+          <p className="break-words"><span className="text-muted-foreground">Patient location: </span>{selected.address || `${selected.latitude.toFixed(5)}, ${selected.longitude.toFixed(5)}`}</p>
+          <p className="break-words"><span className="text-muted-foreground">Ambulance position: </span>{unitPos ? `${unitPos.lat.toFixed(5)}, ${unitPos.lng.toFixed(5)}` : "Waiting for GPS"}</p>
+          <p><span className="text-muted-foreground">GPS: </span>{assigned ? GPS_STATE_META[fix].label : "No assigned unit"}</p>
+          {selected.message && <p className="break-words sm:col-span-2"><span className="text-muted-foreground">Incident notes: </span>{selected.message}</p>}
+          {selected.status === "transporting" && <p className="text-muted-foreground sm:col-span-2">Transporting patient. The displayed route is to the recorded patient location; a hospital destination has not been recorded for this incident.</p>}
+        </div>}
+        {!selected && focused && <p role="status" className="text-xs text-muted-foreground">This dispatch is no longer active. Choose another dispatch or show all teams.</p>}
+      </div>
       <div className={expanded ? "order-2 min-h-[360px] flex-1" : "order-2 h-[46vh] min-h-[360px] shrink-0"}>
       <GoogleMap
         markers={markers}
@@ -215,7 +253,7 @@ export function OpsMap({
         <div className="pointer-events-auto rounded-lg border border-border bg-card/90 px-3 py-2 backdrop-blur">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Live operations map</p>
           <p className="text-xs text-foreground">
-            {incidents.length} incidents · {units.filter((u) => u.status !== "offline").length} units · {hospitals.length} hospitals
+            {scope.incidents.length} incidents · {scope.units.filter((u) => u.status !== "offline").length} units{focused ? " · selected dispatch" : ` · ${hospitals.length} hospitals`}
           </p>
           {etaMin != null && (
             <p className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-sky-300">

@@ -114,7 +114,10 @@ function OperationsPage() {
     resolved: visible.filter((i) => i.status === "resolved").length,
   };
 
-  const selected = incidents.find((i) => i.id === selectedId) ?? active[0] ?? null;
+  const selected = selectedId ? incidents.find((i) => i.id === selectedId) ?? null : active.find(i => !!i.assigned_unit_id) ?? active[0] ?? null;
+  useEffect(() => {
+    if (selectedId === null && selected) setSelectedId(selected.id);
+  }, [selectedId, selected?.id]);
   const eventsQ = useIncidentEvents(selected?.id ?? null, staff);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["ops"] });
