@@ -47,13 +47,13 @@ export function OpsMap({
 }: Props) {
   const [mapTypeId, setMapTypeId] = useState<MapTypeId>(() => {
     if (typeof window === "undefined") return "roadmap";
-    const saved = window.localStorage.getItem("beacon.mapType.v3");
+    const saved = window.localStorage.getItem("beacon.mapType.v4");
     return saved === "roadmap" || saved === "hybrid" ? (saved as MapTypeId) : "roadmap";
   });
   const setMapType = (next: MapTypeId) => {
     setMapTypeId(next);
     try {
-      window.localStorage.setItem("beacon.mapType.v3", next);
+      window.localStorage.setItem("beacon.mapType.v4", next);
     } catch {
       /* storage unavailable */
     }
@@ -134,7 +134,7 @@ export function OpsMap({
           id: u.id,
           lat: u.latitude,
           lng: u.longitude,
-          heading: u.heading ?? 0,
+          heading: u.heading ?? null,
           label: vehicleMapLabel(u, incidents),
           color: UNIT_STATUS_HEX[u.status] ?? UNIT_KIND[u.kind]?.hex ?? "#64748b",
           stale: g === "stale" || g === "lost",
@@ -147,7 +147,7 @@ export function OpsMap({
         id: assigned.id,
         lat: unitPos.lat,
         lng: unitPos.lng,
-        heading: livePoint?.heading ?? assigned.heading ?? 0,
+        heading: livePoint?.heading ?? assigned.heading ?? null,
         label: vehicleMapLabel(assigned, incidents),
         color: UNIT_STATUS_HEX[assigned.status] ?? "#22d3ee",
         stale: fix === "stale" || fix === "lost",
@@ -228,7 +228,6 @@ export function OpsMap({
         geofences={geofences}
         center={center}
         zoom={12}
-        dark
         traffic={traffic}
         cluster={cluster}
         mapTypeId={mapTypeId}

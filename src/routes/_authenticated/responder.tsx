@@ -32,6 +32,9 @@ import { ACTION_META, applyIncidentAction, type LifecycleAction } from "@/lib/in
 import { formatDuration, workedSeconds, type ResponderProfile } from "@/lib/responder";
 import { useResponderBroadcast, useTicker } from "@/hooks/useTracking";
 import { GPS_STATE_META, gpsState } from "@/lib/tracking";
+import { useLiveRoute, useEtaCountdown } from "@/hooks/useMaps";
+import { NavigateButton } from "@/components/NavigateButton";
+import { RoutePanel } from "@/components/ops/RoutePanel";
 
 
 
@@ -142,6 +145,12 @@ function ResponderCommandPage() {
     status: vehicle?.status ?? profile?.availability ?? null,
   });
 
+  const routeIncident = myIncident ?? (selected && !["resolved", "cancelled"].includes(selected.status) ? selected : null);
+  const routeOrigin = broadcast.point ? { lat: broadcast.point.lat, lng: broadcast.point.lng } : ownPos
+    ?? (vehicle?.latitude != null && vehicle.longitude != null ? { lat: vehicle.latitude, lng: vehicle.longitude } : null);
+  const routeDestination = routeIncident ? { lat: routeIncident.latitude, lng: routeIncident.longitude } : null;
+  const responseRoute = useLiveRoute(routeOrigin, routeDestination, 15_000, routeIncident?.id ?? null);
+  const { label: routeEta } = useEtaCountdown(responseRoute.route?.durationInTrafficSeconds ?? responseRoute.route?.durationSeconds ?? null);
 
   const markers: MapMarker[] = useMemo(() => {
     const list: MapMarker[] = active.map((i) => ({
@@ -259,11 +268,20 @@ function ResponderCommandPage() {
 
   const mapBlock = (
     <section aria-label="Live response map" className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+        <div className="min-w-0 text-xs">
+          <p className="font-semibold">{routeIncident ? `${vehicle?.call_sign ?? "Your position"} → ${routeIncident.patient_name ?? "Patient"}` : "Live response map"}</p>
+          <p className="text-muted-foreground">{responseRoute.route ? `ETA ${routeEta ?? "—"} · ${(responseRoute.route.distanceMeters / 1000).toFixed(1)} km` : routeIncident ? "Waiting for location and road route…" : "Select an active incident to view a route."}</p>
+          {responseRoute.error && <p role="status" className="text-destructive">Road route unavailable. Your live position remains visible.</p>}
+        </div>
+        {routeIncident && <NavigateButton incidentId={routeIncident.id} currentLocation={broadcast.point ? { latitude: broadcast.point.lat, longitude: broadcast.point.lng, at: Date.parse(broadcast.point.at) } : null} />}
+      </div>
       <div className="h-[320px] w-full lg:h-[420px]">
         <GoogleMap
-          markers={markers}
+          markers={myIncident ? markers.filter(m => m.id === `inc-${myIncident.id}` || m.id === "me") : markers}
+          routes={responseRoute.route?.polyline ? [{ id: "response-route", encoded: responseRoute.route.polyline, color: "#0284c7", weight: 6 }] : []}
           vehicles={units
-            .filter(unit => unit.latitude != null && unit.longitude != null && unit.status !== "offline")
+            .filter(unit => unit.latitude != null && unit.longitude != null && unit.status !== "offline" && (!myIncident || unit.id === myIncident.assigned_unit_id))
             .map(unit => ({
               id: unit.id,
               lat: unit.latitude!,
@@ -272,14 +290,14 @@ function ResponderCommandPage() {
               label: vehicleMapLabel(unit, active),
               stale: ["stale", "lost"].includes(gpsState(unit.last_location_update)),
             }))}
-          center={ownPos ?? (selected ? { lat: selected.latitude, lng: selected.longitude } : undefined)}
+          center={routeOrigin ?? routeDestination ?? undefined}
           zoom={13}
-          dark
           traffic
           fitToMarkers={!ownPos}
           className="h-full w-full"
         />
       </div>
+      {routeIncident && <div className="px-3 py-2"><RoutePanel route={responseRoute.route} loading={responseRoute.loading} title="Route to patient" /></div>}
       <div className="flex flex-wrap items-center gap-2 border-t border-border px-3 py-2 text-[11px]">
         <span className={`rounded-full px-2 py-0.5 font-semibold ${GPS_STATE_META[gpsState(broadcast.lastPublishedAt)].chip}`}>
           Live tracking · {GPS_STATE_META[gpsState(broadcast.lastPublishedAt)].label}

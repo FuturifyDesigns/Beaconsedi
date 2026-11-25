@@ -1,3 +1,5 @@
+import { vehicleHeading, headingDifference } from "@/lib/vehicle-heading";
+import { prepareVehicleSprite } from "@/lib/vehicle-sprite";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MapFallback, type MapFallbackDetails } from "@/components/MapFallback";
 
@@ -73,8 +75,6 @@ type Props = {
   fitToMarkers?: boolean;
   /** Overlay live traffic conditions. */
   traffic?: boolean;
-  /** Use the night-ops basemap. */
-  dark?: boolean;
   routes?: MapRoute[];
   geofences?: MapGeofence[];
   mapTypeId?: MapTypeId;
@@ -142,19 +142,6 @@ type GMarker = {
 type GOverlay = { setMap: (m: GMap | null) => void };
 
 
-const NIGHT_STYLE = [
-  { elementType: "geometry", stylers: [{ color: "#1b2230" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#1b2230" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#8ea0b8" }] },
-  { featureType: "poi", stylers: [{ visibility: "off" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#2a3446" }] },
-  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9fb0c7" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#3a465e" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#0f1621" }] },
-  { featureType: "administrative", elementType: "geometry.stroke", stylers: [{ color: "#4a5875" }] },
-];
-
 const DAY_STYLE = [
   { featureType: "poi", stylers: [{ visibility: "off" }] },
   { featureType: "transit", stylers: [{ visibility: "off" }] },
@@ -167,7 +154,6 @@ export function GoogleMap({
   className,
   fitToMarkers = true,
   traffic = false,
-  dark = false,
   routes = [],
   geofences = [],
   mapTypeId = "roadmap",
@@ -186,6 +172,13 @@ export function GoogleMap({
   const clusterRef = useRef<{ clearMarkers: () => void; addMarkers: (markers: never) => void } | null>(null);
   const trafficRef = useRef<{ setMap: (m: GMap | null) => void } | null>(null);
   const boundsRef = useRef<GBounds | null>(null);
+  const spriteRenderer = useRef<((heading: number) => string) | null>(null);
+  const [spriteVersion, setSpriteVersion] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    if (vehicles.length) void prepareVehicleSprite(import.meta.env.BASE_URL + "map-icons/ambulance.png").then(render => { if (!cancelled && render) { spriteRenderer.current = render; setSpriteVersion(v => v + 1); } });
+    return () => { cancelled = true; };
+  }, [vehicles.length > 0]);
   const vehicleRefs = useRef<Map<string, { marker: GMarker; lat: number; lng: number; heading: number; raf: number | null }>>(new Map());
   const latestVehicles = useRef(vehicles);
   latestVehicles.current = vehicles;
@@ -282,13 +275,15 @@ export function GoogleMap({
             clickableIcons: false,
             maxZoom: 21,
             tilt: 0,
+            colorScheme: "LIGHT",
             mapTypeId,
-            styles: mapTypeId === "roadmap" ? (dark ? NIGHT_STYLE : DAY_STYLE) : undefined,
+            styles: mapTypeId === "roadmap" ? DAY_STYLE : undefined,
           });
         } else {
           mapRef.current.setOptions({
+            colorScheme: "LIGHT",
             mapTypeId,
-            styles: mapTypeId === "roadmap" ? (dark ? NIGHT_STYLE : DAY_STYLE) : null,
+            styles: mapTypeId === "roadmap" ? DAY_STYLE : null,
           });
         }
         const map = mapRef.current;
@@ -441,7 +436,7 @@ export function GoogleMap({
     return () => {
       cancelled = true;
     };
-  }, [markers, center?.lat, center?.lng, zoom, fitToMarkers, traffic, dark, mapTypeId, cluster, routesKey, fencesKey, vehiclesKey, retryKey, layoutLabels]);
+  }, [markers, center?.lat, center?.lng, zoom, fitToMarkers, traffic, mapTypeId, cluster, routesKey, fencesKey, vehiclesKey, retryKey, layoutLabels]);
 
   // Recenter when the caller moves the focus point.
   useEffect(() => {
@@ -458,17 +453,18 @@ export function GoogleMap({
     const g = (window as unknown as { google?: GMapsGlobal }).google;
     if (!g) return;
 
-    const icon = (_v: LiveVehicle, _heading: number) => ({
-      url: import.meta.env.BASE_URL + "map-icons/ambulance.png",
-      scaledSize: new g.maps.Size(64, 43),
-      anchor: new g.maps.Point(32, 22),
+    const icon = (_v: LiveVehicle, heading: number) => ({
+      url: spriteRenderer.current?.(heading) ?? import.meta.env.BASE_URL + "map-icons/ambulance.png",
+      scaledSize: new g.maps.Size(64, 64),
+      anchor: new g.maps.Point(32, 32),
       labelOrigin: new g.maps.Point(32, -19),
     });
+    const routePaths = routes.filter(r => !r.dashed).map(r => r.path ?? (r.encoded ? decodePolyline(r.encoded) : []));
     const seen = new Set<string>();
     vehicles.forEach((v) => {
       seen.add(v.id);
-      const heading = v.heading ?? 0;
       const existing = vehicleRefs.current.get(v.id);
+      const heading = vehicleHeading(existing, v, routePaths);
 
       if (!existing) {
         const marker = new g.maps.Marker({
@@ -481,22 +477,22 @@ export function GoogleMap({
           label: v.label ? { text: v.label, color: "#e2e8f0", fontSize: "10px", fontWeight: "700", className: "gm-vehicle-label" } : undefined,
         });
         marker.addListener("click", () => { camera.current.interact(); latestVehicles.current.find(vehicle => vehicle.id === v.id)?.onClick?.(); });
-        if (v.label) labelEntries.current.set(`vehicle:${v.id}`, { marker, text: v.label, icon: icon(v, heading), anchorX: 32, anchorY: 22, priority: 1, color: "#7dd3fc" });
+        if (v.label) labelEntries.current.set(`vehicle:${v.id}`, { marker, text: v.label, icon: icon(v, heading), anchorX: 32, anchorY: 32, priority: 1, color: "#7dd3fc" });
         vehicleRefs.current.set(v.id, { marker, lat: v.lat, lng: v.lng, heading, raf: null });
         return;
       }
 
-      existing.marker.setIcon(icon(v, heading));
+      existing.marker.setIcon(icon(v, existing.heading));
       existing.marker.setOpacity(v.stale ? 0.5 : 1);
       if (v.label) existing.marker.setTitle(v.label);
       existing.marker.setLabel(v.label ? { text: v.label, color: "#e2e8f0", fontSize: "10px", fontWeight: "700", className: "gm-vehicle-label" } : null);
       const label = labelEntries.current.get(`vehicle:${v.id}`);
-      if (label && v.label) label.text = v.label;
+      if (label && v.label) { label.text = v.label; label.icon = icon(v, existing.heading); }
 
       const fromLat = existing.lat;
       const fromLng = existing.lng;
       const fromHeading = existing.heading;
-      const dHeading = ((heading - fromHeading + 540) % 360) - 180;
+      const dHeading = headingDifference(fromHeading, heading);
       if (fromLat === v.lat && fromLng === v.lng && dHeading === 0) return;
 
       if (existing.raf) cancelAnimationFrame(existing.raf);
@@ -511,6 +507,9 @@ export function GoogleMap({
         existing.lat = lat;
         existing.lng = lng;
         existing.heading = fromHeading + dHeading * ease;
+        const rotated = icon(v, existing.heading);
+        existing.marker.setIcon(rotated);
+        if (label) label.icon = rotated;
         if (followVehicleId === v.id) map.panTo({ lat, lng });
         existing.raf = t < 1 ? requestAnimationFrame(step) : null;
         if (t >= 1) {
@@ -532,7 +531,7 @@ export function GoogleMap({
       vehicleRefs.current.delete(id);
     });
     layoutLabels();
-  }, [vehiclesKey, ready, followVehicleId, layoutLabels]);
+  }, [vehiclesKey, ready, followVehicleId, layoutLabels, spriteVersion, routesKey]);
 
   useEffect(() => {
     if (!ready || !mapRef.current || !declutterLabels) return;

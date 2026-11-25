@@ -253,7 +253,6 @@ function CrewApp() {
               center={here ?? scene ?? { lat: -24.6282, lng: 25.9231 }}
               focus={here ? { ...here, zoom: 15, nonce: locationFocus } : null}
               zoom={here || scene ? 15 : 12}
-              dark
               fitToMarkers={!here && !!scene}
               className="h-full w-full"
               fallbackDetails={job ? { lat: job.latitude, lng: job.longitude, address: job.address, incidentId: job.id } : localPoint ? { lat: localPoint.latitude, lng: localPoint.longitude, accuracyMeters: localPoint.accuracy, updatedAt: localPoint.at ? new Date(localPoint.at).toISOString() : null } : undefined}
